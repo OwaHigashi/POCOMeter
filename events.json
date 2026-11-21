@@ -1,0 +1,238 @@
+[
+  {
+    "id": "pre-generation-wars",
+    "name": "プレ世代ウォーズ",
+    "ranks": null,
+    "ranking": null,
+    "timed": false,
+    "start": "2026-10-21T00:00:00+09:00",
+    "end": "2026-10-26T00:00:00+09:00",
+    "published": "2026-09-30T12:00:00+09:00",
+    "source": "https://report.pococha.com/n/nbf2c1188a729"
+  },
+  {
+    "id": "generation-wars",
+    "name": "世代ウォーズ",
+    "ranks": null,
+    "ranking": null,
+    "timed": false,
+    "start": "2026-11-13T00:00:00+09:00",
+    "end": "2026-11-18T00:00:00+09:00",
+    "published": "2026-09-30T12:00:00+09:00",
+    "source": "https://report.pococha.com/n/nbf2c1188a729"
+  },
+  {
+    "id": "harvest",
+    "name": "おいも大収穫祭2026",
+    "ranks": [
+      "D1",
+      "D2",
+      "D3",
+      "C1",
+      "C2",
+      "C3",
+      "B1",
+      "B2",
+      "B3",
+      "A1",
+      "A2",
+      "A3",
+      "S1",
+      "S2",
+      "S3",
+      "S4",
+      "S5",
+      "S6"
+    ],
+    "ranking": false,
+    "timed": true,
+    "start": "2026-11-25T12:00:00+09:00",
+    "end": "2026-11-29T00:00:00+09:00",
+    "published": "2026-11-18T16:30:00+09:00",
+    "source": "https://report.pococha.com/n/n642997ac8aa1"
+  },
+  {
+    "id": "pocoland-challenge",
+    "name": "POCO LAND 2026 ぽこチャレ",
+    "ranks": null,
+    "ranking": false,
+    "timed": true,
+    "start": "2026-11-26T12:00:00+09:00",
+    "end": "2026-12-03T00:00:00+09:00",
+    "published": "2026-09-30T12:00:00+09:00",
+    "source": "https://report.pococha.com/n/nbf2c1188a729"
+  },
+  {
+    "id": "20stars-dc",
+    "name": "POCO LAND 2026 20Stars",
+    "ranks": [
+      "D1",
+      "D2",
+      "D3",
+      "C1",
+      "C2",
+      "C3"
+    ],
+    "ranking": true,
+    "timed": true,
+    "start": "2026-12-11T12:00:00+09:00",
+    "end": "2026-12-16T00:00:00+09:00",
+    "published": "2026-09-30T12:00:00+09:00",
+    "source": "https://report.pococha.com/n/nbf2c1188a729"
+  },
+  {
+    "id": "generations-dc",
+    "name": "POCO LAND 2026 Generations",
+    "ranks": [
+      "D1",
+      "D2",
+      "D3",
+      "C1",
+      "C2",
+      "C3"
+    ],
+    "ranking": true,
+    "timed": true,
+    "start": "2026-12-11T12:00:00+09:00",
+    "end": "2026-12-16T00:00:00+09:00",
+    "published": "2026-09-30T12:00:00+09:00",
+    "source": "https://report.pococha.com/n/nbf2c1188a729"
+  },
+  {
+    "id": "listener-mission-dc",
+    "name": "20Stars リスナーミッション",
+    "ranks": [
+      "D1",
+      "D2",
+      "D3",
+      "C1",
+      "C2",
+      "C3"
+    ],
+    "ranking": false,
+    "timed": true,
+    "start": "2026-12-11T12:00:00+09:00",
+    "end": "2026-12-16T00:00:00+09:00",
+    "published": "2026-11-20T09:30:00+09:00",
+    "source": "https://report.pococha.com/n/n6bfccb14eefa"
+  },
+  {
+    "id": "20stars-ba",
+    "name": "POCO LAND 2026 20Stars",
+    "ranks": [
+      "B1",
+      "B2",
+      "B3",
+      "A1",
+      "A2",
+      "A3"
+    ],
+    "ranking": true,
+    "timed": true,
+    "start": "2026-12-12T12:00:00+09:00",
+    "end": "2026-12-17T00:00:00+09:00",
+    "published": "2026-09-30T12:00:00+09:00",
+    "source": "https://report.pococha.com/n/nbf2c1188a729"
+  },
+  {
+    "id": "generations-ba",
+    "name": "POCO LAND 2026 Generations",
+    "ranks": [
+      "B1",
+      "B2",
+      "B3",
+      "A1",
+      "A2",
+      "A3"
+    ],
+    "ranking": true,
+    "timed": true,
+    "start": "2026-12-12T12:00:00+09:00",
+    "end": "2026-12-17T00:00:00+09:00",
+    "published": "2026-09-30T12:00:00+09:00",
+    "source": "https://report.pococha.com/n/nbf2c1188a729"
+  },
+  {
+    "id": "listener-mission-ba",
+    "name": "20Stars リスナーミッション",
+    "ranks": [
+      "B1",
+      "B2",
+      "B3",
+      "A1",
+      "A2",
+      "A3"
+    ],
+    "ranking": false,
+    "timed": true,
+    "start": "2026-12-12T12:00:00+09:00",
+    "end": "2026-12-17T00:00:00+09:00",
+    "published": "2026-11-20T09:30:00+09:00",
+    "source": "https://report.pococha.com/n/n6bfccb14eefa"
+  },
+  {
+    "id": "20stars-s",
+    "name": "POCO LAND 2026 20Stars",
+    "ranks": [
+      "S1",
+      "S2",
+      "S3",
+      "S4",
+      "S5",
+      "S6"
+    ],
+    "ranking": true,
+    "timed": true,
+    "start": "2026-12-13T12:00:00+09:00",
+    "end": "2026-12-18T00:00:00+09:00",
+    "published": "2026-09-30T12:00:00+09:00",
+    "source": "https://report.pococha.com/n/nbf2c1188a729"
+  },
+  {
+    "id": "generations-s",
+    "name": "POCO LAND 2026 Generations",
+    "ranks": [
+      "S1",
+      "S2",
+      "S3",
+      "S4",
+      "S5",
+      "S6"
+    ],
+    "ranking": true,
+    "timed": true,
+    "start": "2026-12-13T12:00:00+09:00",
+    "end": "2026-12-18T00:00:00+09:00",
+    "published": "2026-09-30T12:00:00+09:00",
+    "source": "https://report.pococha.com/n/nbf2c1188a729"
+  },
+  {
+    "id": "listener-mission-s",
+    "name": "20Stars リスナーミッション",
+    "ranks": [
+      "S1",
+      "S2",
+      "S3",
+      "S4",
+      "S5",
+      "S6"
+    ],
+    "ranking": false,
+    "timed": true,
+    "start": "2026-12-13T12:00:00+09:00",
+    "end": "2026-12-18T00:00:00+09:00",
+    "published": "2026-11-20T09:30:00+09:00",
+    "source": "https://report.pococha.com/n/n6bfccb14eefa"
+  },
+  {
+    "id": "christmas",
+    "name": "Pocochaクリスマスパーティ2026",
+    "ranks": null,
+    "ranking": false,
+    "timed": false,
+    "start": "2026-12-24T00:00:00+09:00",
+    "end": "2026-12-26T00:00:00+09:00",
+    "published": "2026-09-30T12:00:00+09:00",
+    "source": "https://report.pococha.com/n/nbf2c1188a729"
+  }
+]

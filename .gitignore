@@ -1,0 +1,10 @@
+__pycache__/
+
+/data.json
+/status.json
+/.meter-state.json
+/.meter-update.cron
+/.meter-update.lock
+/.data.json.*
+/.status.json.*
+/..meter-state.json.*

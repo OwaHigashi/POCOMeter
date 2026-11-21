@@ -1,0 +1,660 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="PocochaのD1〜S6、13時・22時・24時締めのランクメーター予測。公開実績と公式イベントを確認できます。">
+  <title>Pococha ランクメーター予測</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --canvas: #f2f4f9;
+      --white: #fff;
+      --ink: #171c33;
+      --soft: #505974;
+      --line: #dce1ed;
+      --accent: #4e44bb;
+      --night: #1e2141;
+      --wash: #eeecff;
+      --warning: #744410;
+      --warning-bg: #fff2df;
+      --radius: 18px;
+      font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--canvas); line-height: 1.55; }
+    button, select, input { font: inherit; }
+    a { color: var(--accent); text-underline-offset: .18em; }
+    :focus-visible { outline: 3px solid #8678ec; outline-offset: 3px; }
+    h1, h2, h3, p, dl, dd { margin: 0; }
+    .shell { width: min(1096px, calc(100% - 64px)); margin-inline: auto; }
+    .top { background: #181a34; color: white; border-bottom: 1px solid #3d3c65; }
+    .top .shell { display: flex; justify-content: space-between; align-items: center; min-height: 61px; gap: 16px; }
+    .brand { display: flex; align-items: center; gap: 11px; font-weight: 750; letter-spacing: .03em; }
+    .brand-mark { display: flex; align-items: end; gap: 3px; padding: 8px; border-radius: 9px; background: #3b3469; }
+    .brand-mark i { display: block; width: 3px; height: 7px; border-radius: 2px; background: #b8acf9; }
+    .brand-mark i:nth-child(2) { height: 11px; }
+    .brand-mark i:nth-child(3) { height: 15px; background: white; }
+    .timezone { color: #d1d4e7; font-size: .875rem; white-space: nowrap; }
+    .hero {
+      background: radial-gradient(ellipse at 82% 0%, #37326c, transparent 55%), var(--night);
+      color: white;
+      padding: 42px 0 58px;
+    }
+    .hero-inner { display: flex; justify-content: space-between; gap: 22px 36px; align-items: end; }
+    h1 { line-height: 1.24; font-size: clamp(1.9rem, 4.7vw, 3.2rem); letter-spacing: -.042em; }
+    .hero p { color: #e2e3f2; margin-top: 12px; }
+    .status {
+      padding: 10px 13px;
+      border-radius: 10px;
+      border: 1px solid #5c5b8b;
+      color: #f0eefc;
+      background: #303150;
+      font-size: .89rem;
+      line-height: 1.45;
+      flex: 0 0 auto;
+      max-width: 23rem;
+    }
+    .status.delayed { color: var(--warning); background: var(--warning-bg); border-color: #f6d9ab; }
+    .status small { display: block; margin-top: 3px; font-size: .8rem; }
+    main.shell { margin-top: -28px; padding-bottom: 24px; }
+    .panel { background: var(--white); border: 1px solid var(--line); border-radius: var(--radius); }
+    .filters {
+      display: grid;
+      grid-template-columns: minmax(310px, 1.35fr) minmax(130px, .55fr) minmax(265px, 1fr);
+      align-items: end;
+      gap: 18px;
+      padding: 19px 23px;
+      box-shadow: 0 10px 30px #1721460a;
+    }
+    .control-label, legend { display: block; margin-bottom: 7px; font-size: .875rem; font-weight: 730; }
+    fieldset { min-width: 0; padding: 0; margin: 0; border: 0; }
+    .date-controls, .time-controls { display: flex; gap: 5px; align-items: stretch; }
+    .date-controls input { flex: 1; min-width: 0; }
+    input[type="date"], select, button {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f8f9fd;
+      color: var(--ink);
+      height: 42px;
+      padding: 0 .7rem;
+      cursor: pointer;
+    }
+    button { white-space: nowrap; font-weight: 670; font-size: .875rem; }
+    button:hover:enabled { background: var(--wash); }
+    button:disabled { cursor: default; opacity: .45; }
+    select {
+      width: 100%; appearance: none; padding-right: 2rem; font-weight: 730;
+      background-image: linear-gradient(45deg, transparent 50%, #57517a 50%),
+                        linear-gradient(135deg, #57517a 50%, transparent 50%);
+      background-position: calc(100% - 17px) 18px, calc(100% - 12px) 18px;
+      background-size: 5px 5px; background-repeat: no-repeat;
+    }
+    .time-controls { gap: 3px; padding: 3px; background: #f0f1f7; border-radius: 9px; }
+    .time-controls label { position: relative; flex: 1; text-align: center; }
+    .time-controls input { position: absolute; opacity: 0; width: 1px; }
+    .time-controls span {
+      display: block; cursor: pointer; border-radius: 7px; font-size: .9rem;
+      padding: 7px .35rem; font-weight: 700; white-space: nowrap;
+    }
+    .time-controls input:checked + span { background: var(--accent); color: white; }
+    .time-controls input:focus-visible + span { outline: 3px solid #8678ec; outline-offset: 2px; }
+    .section { margin-top: 25px; }
+    .section-heading { display: flex; justify-content: space-between; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-bottom: 12px; }
+    h2 { font-size: 1.26rem; line-height: 1.3; letter-spacing: -.02em; }
+    .secondary { font-size: .875rem; color: var(--soft); }
+    .numbers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .number {
+      --stripe: #8b81d8;
+      padding: 16px 18px 18px;
+      border-top: 3px solid var(--stripe);
+      min-width: 0;
+    }
+    .number:nth-child(2) { --stripe: #5a50c8; }
+    .number:nth-child(3) { --stripe: #342481; }
+    .target { display: flex; align-items: center; gap: 8px; font-size: .84rem; color: var(--soft); }
+    .target strong { display: inline-block; min-width: 38px; color: #413594; background: var(--wash); padding: 2px 8px; border-radius: 7px; text-align: center; font-size: 1.05rem; }
+    .value { font-size: clamp(1.45rem, 4.25vw, 2.85rem); margin: 6px 0 0; font-weight: 770; letter-spacing: -.055em; line-height: 1.16; font-variant-numeric: tabular-nums; }
+    .unit { font-size: .84rem; color: var(--soft); }
+    .basis { font-size: .82rem; color: var(--soft); margin-top: 9px; min-height: 2.7em; }
+    .basis > * { display: block; }
+    .basis strong { color: var(--ink); font-size: .875rem; }
+    .actual-line { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 15px; align-items: baseline; margin-top: 11px; padding: 11px 15px; }
+    .actual-line strong { margin-left: 3px; font-weight: 690; color: var(--ink); }
+    .forecast-note { padding: 11px 15px; margin-top: 11px; }
+    .coverage-warning { color: var(--warning); background: var(--warning-bg); border-color: #f6d9ab; }
+    .forecast-note p { margin-top: 3px; }
+    .calendar-list { margin: 6px 0 0; padding-left: 1.3em; }
+    .information { display: grid; grid-template-columns: 1.15fr 1fr; gap: 13px; align-items: start; }
+    .info { padding: 18px; }
+    .info p { margin-top: 9px; }
+    .info dl { margin-top: 10px; }
+    .info dl div { display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--line); padding: 6px 0; }
+    .info dt { color: var(--soft); font-size: .86rem; }
+    .info dd { font-size: .86rem; text-align: right; }
+    .events { padding: 0; list-style: none; margin: 10px 0 0; }
+    .events li { border-top: 1px solid var(--line); padding: 10px 0 0; margin: 9px 0 0; }
+    .events a { font-weight: 720; color: var(--ink); }
+    .reference-events { margin-top: 13px; border-top: 1px solid var(--line); padding-top: 10px; }
+    .source-warning { color: var(--warning); }
+    .event-meta { display: block; color: var(--soft); margin-top: 2px; font-size: .84rem; }
+    .tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+    .tag { background: var(--wash); color: #443887; border-radius: 5px; padding: 2px 7px; font-size: .81rem; font-weight: 690; }
+    .jump { margin-top: 10px; }
+    .details { margin-top: 13px; padding: 12px 16px; }
+    summary { cursor: pointer; font-weight: 700; }
+    details p { margin: 8px 0; }
+    .table-scroll { overflow-x: auto; }
+    table { text-align: right; width: 100%; border-collapse: collapse; font-size: .87rem; font-variant-numeric: tabular-nums; }
+    th, td { padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+    th:first-child, td:first-child { text-align: left; padding-left: 0; }
+    .foot { border-top: 1px solid var(--line); padding: 14px 0 25px; }
+    [hidden] { display: none !important; }
+    @media (max-width: 840px) {
+      .filters { grid-template-columns: minmax(245px, 1fr) minmax(115px, .6fr); }
+      .filters fieldset { grid-column: span 2; }
+      .hero-inner { align-items: start; flex-direction: column; }
+    }
+    @media (max-width: 580px) {
+      .shell { width: calc(100% - 26px); }
+      .top .shell { min-height: 54px; }
+      .hero { padding: 27px 0 49px; }
+      .hero p { font-size: .93rem; }
+      .filters { grid-template-columns: minmax(0, 1fr); padding: 13px; gap: 10px; }
+      .filters fieldset { grid-column: auto; }
+      input[type="date"] { width: 40%; }
+      .section { margin-top: 21px; }
+      .numbers { gap: 5px; }
+      .number { padding: 8px 6px 11px; border-radius: 10px; }
+      .target { flex-wrap: wrap; gap: 3px 5px; }
+      .target strong { font-size: .91rem; min-width: 30px; padding-inline: 5px; }
+      .value { font-size: clamp(1.04rem, 5.3vw, 1.77rem); margin-top: 8px; }
+      .basis, .basis strong, .unit { font-size: .76rem; }
+      .information { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="shell">
+      <span class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>Pococha メーター</span>
+      <span class="timezone">日本時間（JST）</span>
+    </div>
+  </header>
+  <section class="hero">
+    <div class="shell hero-inner">
+      <div>
+        <h1>ランクメーター予測</h1>
+        <p>日付・ランク・締め時間で、必要な応援ポイントの目安を確認。</p>
+      </div>
+      <p class="status" id="status" role="status">保存済みデータを読み込み中</p>
+    </div>
+  </section>
+  <main class="shell">
+    <form class="filters panel" id="filters">
+      <div>
+        <label for="target-date" class="control-label">予測対象日</label>
+        <div class="date-controls">
+          <button id="before" type="button" disabled>前日</button>
+          <input type="date" id="target-date" required disabled>
+          <button id="after" type="button" disabled>翌日</button>
+        </div>
+      </div>
+      <div>
+        <label for="rank" class="control-label">ランク</label>
+        <select id="rank">
+          <optgroup label="D帯"><option>D1</option><option>D2</option><option>D3</option></optgroup>
+          <optgroup label="C帯"><option>C1</option><option>C2</option><option>C3</option></optgroup>
+          <optgroup label="B帯"><option selected>B1</option><option>B2</option><option>B3</option></optgroup>
+          <optgroup label="A帯"><option>A1</option><option>A2</option><option>A3</option></optgroup>
+          <optgroup label="S帯"><option>S1</option><option>S2</option><option>S3</option><option>S4</option><option>S5</option><option>S6</option></optgroup>
+        </select>
+      </div>
+      <fieldset>
+        <legend>締め時間</legend>
+        <div class="time-controls">
+          <label><input type="radio" name="close" value="13" checked><span>13時</span></label>
+          <label><input type="radio" name="close" value="22"><span>22時</span></label>
+          <label><input type="radio" name="close" value="24"><span>24時</span></label>
+        </div>
+      </fieldset>
+    </form>
+
+    <section class="section" aria-labelledby="forecast-title">
+      <div class="section-heading">
+        <h2 id="forecast-title">応援ポイントの予測</h2>
+        <p id="selection" class="secondary" aria-live="polite"></p>
+      </div>
+      <div class="numbers" id="numbers">
+        <article class="number panel">
+          <h3 class="target"><strong>±0</strong>維持</h3>
+          <p class="value">—</p><p class="unit">応援ポイント</p>
+          <p class="basis"></p>
+        </article>
+        <article class="number panel">
+          <h3 class="target"><strong>+1</strong>ランクポイント</h3>
+          <p class="value">—</p><p class="unit">応援ポイント</p>
+          <p class="basis"></p>
+        </article>
+        <article class="number panel">
+          <h3 class="target"><strong>+2</strong>ランクポイント</h3>
+          <p class="value">—</p><p class="unit">応援ポイント</p>
+          <p class="basis"></p>
+        </article>
+      </div>
+      <div class="panel actual-line secondary" id="actual-line" hidden>
+        <a id="actual-link" href="https://www.oshi-p-meter.com/borders">選択日の公開実績</a>
+        <strong id="actual-values"></strong>
+      </div>
+      <p class="secondary forecast-note" id="context-training" hidden></p>
+      <div class="panel forecast-note coverage-warning" id="event-coverage" aria-live="polite" hidden>
+        <strong>イベント情報の反映ができません</strong>
+        <p id="event-coverage-detail"></p>
+      </div>
+      <div class="panel forecast-note" id="holiday-context" aria-live="polite" hidden>
+        <strong>締め区間に重なる祝日・休暇</strong>
+        <ul class="calendar-list secondary" id="holiday-list"></ul>
+        <p class="secondary" id="holiday-method"></p>
+      </div>
+    </section>
+
+    <div class="section information">
+      <section class="info panel" aria-labelledby="events-heading">
+        <h2 id="events-heading">締めまでに重なるイベント</h2>
+        <p class="secondary" id="window"></p>
+        <p class="secondary" id="event-message">公式告知を読み込み中</p>
+        <ul class="events" id="events"></ul>
+        <details class="reference-events" id="reference-events" hidden>
+          <summary id="reference-event-count">参考イベント</summary>
+          <ul class="events" id="reference-event-list"></ul>
+        </details>
+        <button class="jump" id="upcoming" type="button" hidden></button>
+      </section>
+      <section class="info panel" aria-labelledby="data-heading">
+        <h2 id="data-heading">更新情報と出典</h2>
+        <dl>
+          <div><dt>実績の最新日</dt><dd id="latest">—</dd></div>
+          <div><dt>実績データの取得日時</dt><dd id="observations-updated">—</dd></div>
+          <div><dt>予測の更新日時</dt><dd id="updated">—</dd></div>
+          <div><dt>ランク別の実績</dt><dd><a id="border-source" href="https://www.oshi-p-meter.com/borders">推しPメーター</a></dd></div>
+          <div><dt>祝日・振替休日</dt><dd><a id="holiday-source" href="https://www8.cao.go.jp/chosei/shukujitsu/gaiyou.html">内閣府</a></dd></div>
+        </dl>
+        <p class="secondary" id="official-links"><a href="https://report.pococha.com/n/n803868883e7d">Pococha公式カレンダー</a></p>
+        <p class="secondary">画像に掲載された情報は公式カレンダーで確認できます。</p>
+        <p class="secondary source-warning" id="image-review" hidden></p>
+        <p class="secondary" id="reference-source"></p>
+        <p class="secondary source-warning" id="holiday-warning" hidden>祝日データの更新に失敗しました。最後に確認できた祝日を表示しています。</p>
+      </section>
+    </div>
+    <details class="details panel">
+      <summary>予測方法と検証結果</summary>
+      <p class="secondary">曜日別の暫定予測は、直近30日中央値を、過去56日の曜日傾向で調整します。各日の値を同じ週の中央値と比べ、同じ曜日の観測が少ないほど調整幅を小さくします。その系列の実績が少ない場合は、同じ締め時間・ランク帯の曜日傾向を使います。</p>
+      <p class="secondary">暫定補正は、過去の休日・イベント予定と実績を同じ締め時間で照合して推定します。イベントの対象ランク、種類、重複時間、ランキングの有無、最終日、同時開催を使います。イベントの増減は直近30日の通常の開催状況を基準にしています。</p>
+      <p class="secondary">検証では、締めまでの24時間が始まる時点で確認済みだった情報を使い、中央値、曜日別予測、曜日・休日を使う正則化回帰、イベント回帰を比較します。予定と実績を後から照合した暫定補正の精度は、まだ検証できていません。</p>
+      <p class="secondary">休日の入力は、祝日・振替休日など、お盆（8月13〜16日を目安）、年末年始（12月29日〜1月3日）との重なりです。先の日付ではイベントが追加・変更されることがあります。予測日までの日数ごとの精度は検証中です。</p>
+      <div id="validation" class="secondary"></div>
+      <p class="secondary">参考比較は13時締めのB1・A1の24件です。平均絶対割合誤差（MAPE）は中央値 8.06%、イベント補正あり 8.60%、前週同曜日 11.27%でした。</p>
+    </details>
+    <noscript><p class="section">実績と予測の表示にはJavaScriptを有効にしてください。</p></noscript>
+  </main>
+  <footer class="shell foot secondary">非公式の予測です。最新のメーターはPocochaアプリで確認できます。 <a href="api.php">JSON API</a> ／ <a href="api-csv.php">CSVダウンロード</a></footer>
+  <script>
+    "use strict";
+    const byId = id => document.getElementById(id);
+    const form = byId("filters");
+    const dateInput = byId("target-date");
+    const rankInput = byId("rank");
+    const cards = [...document.querySelectorAll(".number")];
+    const formatter = new Intl.NumberFormat("ja-JP");
+    const signedPercent = new Intl.NumberFormat("ja-JP", {signDisplay: "exceptZero", maximumFractionDigits: 1});
+    const signedPoints = new Intl.NumberFormat("ja-JP", {signDisplay: "exceptZero"});
+    const dayFormatter = new Intl.DateTimeFormat("ja-JP", {timeZone: "Asia/Tokyo", month: "numeric", day: "numeric"});
+    const timeFormatter = new Intl.DateTimeFormat("ja-JP", {timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23"});
+    const clockFormatter = new Intl.DateTimeFormat("ja-JP", {timeZone: "Asia/Tokyo", hour: "numeric", minute: "2-digit", hourCycle: "h23"});
+    const labels = ["±0", "+1", "+2"];
+    const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
+    const DAY = 86400000;
+    let data;
+    let updateStatus;
+
+    function create(tag, text, className) {
+      const item = document.createElement(tag);
+      if (text != null) item.textContent = text;
+      if (className) item.className = className;
+      return item;
+    }
+
+    function sourceLink(url, title) {
+      const anchor = create("a", title);
+      anchor.href = url;
+      return anchor;
+    }
+
+    function jstDate(time = Date.now()) {
+      return new Date(time + 9 * 3600000).toISOString().slice(0, 10);
+    }
+
+    function shift(day, offset) {
+      return new Date(Date.parse(day + "T00:00:00Z") + offset * DAY).toISOString().slice(0, 10);
+    }
+
+    function shortDate(day) {
+      return dayFormatter.format(new Date(day + "T00:00:00+09:00"));
+    }
+
+    function point(value) {
+      return value == null ? "—" : formatter.format(value);
+    }
+
+    function methodTitle(method) {
+      return ({
+        median: "直近30日中央値",
+        source_median: "公開30日中央値",
+        weekday: "曜日別予測",
+        ridge: "正則化回帰",
+        events: "正則化回帰・イベント補正"
+      })[method];
+    }
+
+    function drawValues(series, day, hour) {
+      const weekday = new Date(day + "T00:00:00Z").getUTCDay();
+      const typical = series.forecastByWeekday?.[weekday] || series.forecastDefault;
+      const prediction = series.forecasts[day] || (day >= data.today ? typical : null);
+      const actual = series.actuals[day];
+      byId("forecast-title").textContent = prediction ? "応援ポイントの予測" : "応援ポイントの公開実績";
+      cards.forEach((card, i) => {
+        const value = prediction ? prediction.points[i] : actual?.[0][i];
+        card.querySelector(".value").textContent = point(value);
+        const info = card.querySelector(".basis");
+        const basis = prediction?.basis[i];
+        info.replaceChildren();
+        if (value == null) {
+          info.append(create("strong", "データなし"));
+          return;
+        }
+        if (!basis) {
+          info.append(create("strong", "公開実績"));
+          return;
+        }
+        const hasSchedule = !data.eventGaps?.[hour]?.[day];
+        const title = basis.context
+          ? (hasSchedule ? "休日・イベント込みの暫定予測" : "曜日・休日の暫定予測")
+          : (basis.weekday?.provisional ? "曜日別の暫定予測" : methodTitle(basis.method));
+        info.append(create("strong", title));
+        const interval = shortDate(basis.from) + "〜" + shortDate(basis.through);
+        if (basis.source) {
+          info.append(sourceLink(basis.source, interval + "の出典"));
+        } else if (basis.method === "median") {
+          info.append(create("span", interval + "・" + basis.n + "日分"));
+        }
+        if (basis.weekday) {
+          const reference = basis.weekday.shared ? "同じランク帯の" : "";
+          const amount = signedPercent.format(basis.weekday.percent);
+          info.append(create("span", reference + weekdays[weekday] + "曜 " + basis.weekday.n + "日分（" + amount + "%）"));
+        }
+        if (basis.context) {
+          const effects = [];
+          if (data.holidayWindows?.[hour]?.[day]?.length && !basis.calendar) {
+            effects.push("休日 " + signedPoints.format(basis.context.holiday));
+          }
+          if (hasSchedule) {
+            effects.push("イベント " + signedPoints.format(basis.context.events));
+          }
+          if (effects.length) info.append(create("span", effects.join(" ／ ") + " pt"));
+        }
+      });
+      byId("actual-line").hidden = !actual || !prediction;
+      if (actual) {
+        byId("actual-link").href = actual[1];
+        byId("actual-values").textContent = actual[0].map((value, i) => labels[i] + " " + point(value)).join(" ／ ");
+      }
+      byId("latest").textContent = series.latest || "未取得";
+      byId("border-source").href = series.latestSource || "https://www.oshi-p-meter.com/borders";
+      return prediction;
+    }
+
+    function drawCalendar(day, hour, prediction) {
+      const gaps = data.eventGaps?.[hour]?.[day] || [];
+      const showGap = Boolean(prediction && gaps.length);
+      byId("event-coverage").hidden = !showGap;
+      if (showGap) {
+        const missing = gaps.map(month => Number(month.slice(0, 4)) + "年" + Number(month.slice(5)) + "月");
+        byId("event-coverage-detail").textContent = missing.join("・") +
+          "のイベント一覧を確認できていないため、曜日・休日を使った予測を表示しています。";
+      }
+
+      const diagnostics = data.contextTraining?.[hour];
+      const applied = prediction?.basis.some(basis => basis.context);
+      const training = byId("context-training");
+      training.hidden = !(applied && diagnostics?.days);
+      if (!training.hidden) {
+        training.textContent = "暫定補正には、過去の予定と照合できた実績 " + diagnostics.days +
+          "日分（休日・休暇を含む日 " + diagnostics.holidayDays + "日分）を使用しています。";
+      }
+
+      const holidays = data.holidayWindows?.[hour]?.[day] || [];
+      byId("holiday-context").hidden = holidays.length === 0;
+      const list = byId("holiday-list");
+      list.replaceChildren();
+      for (const holiday of holidays) {
+        const first = new Date(holiday.start);
+        const last = new Date(holiday.end);
+        const endTime = jstDate(first.getTime()) === jstDate(last.getTime()) ? clockFormatter.format(last) : "24:00";
+        const text = dayFormatter.format(first) + " " + holiday.name +
+          "（" + clockFormatter.format(first) + "〜" + endTime + "・" + holiday.hours + "時間）";
+        list.append(create("li", text));
+      }
+
+      const explanation = byId("holiday-method");
+      const usedFor = prediction?.basis.flatMap((basis, i) => basis.calendar ? [labels[i]] : []) || [];
+      explanation.hidden = !prediction;
+      if (applied && holidays.length) {
+        const seasonalProxy = holidays.some(holiday => holiday.kind === "obon" && !diagnostics?.obonDays ||
+          holiday.kind === "new_year" && !diagnostics?.newYearDays);
+        explanation.textContent = seasonalProxy
+          ? "同じ時期の学習実績がないため、観測できた休日の傾向を基に補正しています。"
+          : "この締め区間に重なる休日・休暇を予測値に反映しています。";
+      } else if (usedFor.length) {
+        explanation.textContent = usedFor.join("・") + "の回帰で、休日との重なりを入力に使用しています。";
+      } else if (prediction?.basis.some(basis => basis.weekday)) {
+        explanation.textContent = "この予測は曜日の傾向を反映しています。休日補正は実績がそろってから検証します。";
+      } else if (prediction?.basis.every(basis => ["median", "source_median"].includes(basis.method))) {
+        explanation.textContent = "この予測は30日中央値です。休日補正は実績がそろってから検証します。";
+      } else {
+        explanation.textContent = "休日補正は実績がそろってから検証します。";
+      }
+    }
+
+    function eventPeriod(event) {
+      const start = new Date(event.start);
+      const end = new Date(new Date(event.end).getTime() - 1000);
+      if (!event.timed) return dayFormatter.format(start) + "〜" + dayFormatter.format(end) + "（時刻未公表）";
+      const format = new Intl.DateTimeFormat("ja-JP", {timeZone: "Asia/Tokyo", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23"});
+      return format.format(start) + "〜" + format.format(end);
+    }
+
+    function drawEvents(series, day, rank, hour, prediction) {
+      const windowStart = hour === "24" ? day : shift(day, -1);
+      const startHour = hour === "24" ? "0" : hour;
+      byId("window").textContent = shortDate(windowStart) + " " + startHour + "時〜" + shortDate(day) + " " + hour + "時";
+      const dates = data.hourlyEvents?.[hour];
+      const entriesFor = day => {
+        if (!dates) return series.eventDays?.[day]?.entries || [];
+        return (dates[day] || []).filter(entry => {
+          const ranks = data.events[entry.id].ranks;
+          return ranks == null || ranks.includes(rank);
+        });
+      };
+      const list = byId("events");
+      const referenceList = byId("reference-event-list");
+      list.replaceChildren();
+      referenceList.replaceChildren();
+      const message = byId("event-message");
+      const next = byId("upcoming");
+      const upcoming = Object.keys(dates || series.eventDays || {})
+        .find(value => value > day && entriesFor(value).length);
+      const entries = entriesFor(day);
+      next.hidden = entries.length > 0 || !upcoming;
+      if (upcoming) {
+        next.textContent = "次のイベント日 " + shortDate(upcoming);
+        next.onclick = () => { dateInput.value = upcoming; render(); };
+      }
+      const confirmed = entries.filter(entry => !data.events[entry.id].reference);
+      const referenceCount = entries.length - confirmed.length;
+      byId("reference-events").hidden = referenceCount === 0;
+      byId("reference-event-count").textContent = "参考イベント " + referenceCount + "件（非公式一覧）";
+      const overlapHours = series.overlaps?.[day] || series.eventDays?.[day]?.simultaneous;
+      const overlap = overlapHours > 0
+        ? "。同時開催の重なり 約" + overlapHours + "時間" +
+          (confirmed.some(entry => !data.events[entry.id].timed) ? "（時刻未公表は日付で集計）" : "")
+        : "";
+      message.textContent = confirmed.length
+        ? "公式告知で確認できたイベント " + confirmed.length + "件" + overlap + "。"
+        : "この締め区間に重なる公式告知は確認できていません。";
+      if (entries.length && prediction && !data.eventGaps?.[hour]?.[day]) {
+        if (prediction.basis.some(basis => basis.context)) {
+          message.textContent += " 参考一覧を含む開催予定を暫定補正に使用しています。";
+        } else if (!prediction.basis.some(basis => basis.method === "events")) {
+          message.textContent += " イベント補正に使える実績がまだありません。";
+        }
+      }
+      for (const entry of entries) {
+        const event = data.events[entry.id];
+        const item = create("li");
+        const ranks = event.ranks?.length === 18
+          ? "全ランク"
+          : event.ranks?.join("・") || "対象ランク未確認";
+        const times = event.timed ? " ／ 約" + entry.hours + "時間重複" : "";
+        const ranking = event.ranking == null ? "ランキング未確認" : event.ranking ? "ランキングあり" : "ランキングなし";
+        const tags = create("div", null, "tags");
+        tags.append(create("span", ranking, "tag"));
+        if (entry.final) tags.append(create("span", "最終日", "tag"));
+        item.append(sourceLink(event.source, event.name), create("span", eventPeriod(event) + times, "event-meta"),
+                    create("span", ranks, "event-meta"), tags);
+        (event.reference ? referenceList : list).append(item);
+      }
+    }
+
+    function drawSources(day) {
+      const source = byId("reference-source");
+      const month = day.slice(0, 7);
+      const reference = data.referenceMonths?.[month];
+      const failed = updateStatus?.referenceDelayed === true;
+      source.replaceChildren();
+      if (reference) {
+        source.append(sourceLink(reference.url, "配信予定メーカー（参考・非公式）"));
+        source.append(document.createTextNode(" " + timeFormatter.format(new Date(reference.asOf)) + "時点"));
+      } else {
+        source.append(document.createTextNode("選択月の参考イベント一覧は未取得です。"));
+      }
+      if (failed) {
+        source.append(create("span", " 参考イベント一覧の更新に失敗しました。保存済みの予定を表示しています。", "source-warning"));
+      }
+    }
+
+    function drawValidation(series) {
+      const content = byId("validation");
+      content.replaceChildren();
+      if (!series.validation.some(result => result.n)) {
+        content.append(create("p", "このランク・締め時間では、同じ予測条件で比較できる実績がまだありません。"));
+        return;
+      }
+      const wrap = create("div", null, "table-scroll");
+      const table = create("table");
+      const top = table.createTHead().insertRow();
+      for (const text of ["ボーダー", "方式", "比較日数", "中央値", "曜日別", "回帰", "イベント回帰"]) {
+        const cell = create("th", text);
+        cell.scope = "col";
+        top.append(cell);
+      }
+      const body = table.createTBody();
+      const percentages = scores => scores.map(value => value == null ? "—" : value.toFixed(2) + "%");
+      series.validation.forEach((result, i) => {
+        const tracks = [[result.n, ...(result.baseMape || [null, null, null]), null]];
+        if (result.eventN) tracks.push([result.eventN, ...result.eventMape]);
+        for (const [count, ...scores] of tracks) {
+          const row = body.insertRow();
+          const values = [labels[i], methodTitle(result.method), count, ...percentages(scores)];
+          for (const value of values) row.insertCell().textContent = value;
+        }
+      });
+      wrap.append(table);
+      content.append(create("p", "同じ日で比較した平均絶対割合誤差（MAPE）"), wrap);
+    }
+
+    function render() {
+      if (!data) return;
+      const day = dateInput.value;
+      if (!dateInput.validity.valid) return;
+      const rank = rankInput.value;
+      const hour = form.querySelector("input[name=close]:checked").value;
+      const series = data.series[rank + "/" + hour];
+      const weekday = weekdays[new Date(day + "T00:00:00Z").getUTCDay()];
+      byId("selection").textContent = day + "（" + weekday + "） ／ " + rank + " ／ " + hour + "時締め";
+      byId("before").disabled = day <= data.first;
+      byId("after").disabled = day >= data.last;
+      const prediction = drawValues(series, day, hour);
+      drawCalendar(day, hour, prediction);
+      drawEvents(series, day, rank, hour, prediction);
+      drawSources(day);
+      drawValidation(series);
+    }
+
+    function showStatus(status) {
+      const banner = byId("status");
+      const failure = status?.state === "delayed" &&
+        Date.parse(status.checked) >= Date.parse(data.observationsUpdated || data.updated);
+      banner.classList.toggle("delayed", failure);
+      const headline = failure ? "データの更新に失敗しました" : "保存済みの予測を表示";
+      banner.replaceChildren(create("strong", headline));
+      if (failure) banner.append(create("small", "最後に取得できた過去実績に基づく予測を表示しています。"));
+    }
+
+    async function readJson(path) {
+      const response = await fetch(path, {cache: "no-store"});
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      return response.json();
+    }
+
+    form.addEventListener("submit", event => event.preventDefault());
+    form.addEventListener("change", render);
+    byId("before").addEventListener("click", () => { dateInput.value = shift(dateInput.value, -1); render(); });
+    byId("after").addEventListener("click", () => { dateInput.value = shift(dateInput.value, 1); render(); });
+
+    Promise.all([readJson("data.json"), readJson("status.json").catch(() => null)])
+      .then(([snapshot, status]) => {
+        if (snapshot.schema !== 1) throw new Error("Unknown snapshot schema");
+        data = snapshot;
+        updateStatus = status;
+        dateInput.disabled = false;
+        dateInput.min = data.first;
+        dateInput.max = data.last;
+        const today = jstDate();
+        dateInput.value = today >= data.first && today <= data.last ? today : data.today;
+        byId("updated").textContent = timeFormatter.format(new Date(data.updated));
+        byId("observations-updated").textContent =
+          timeFormatter.format(new Date(data.observationsUpdated || data.updated));
+        if (data.holidaySource) byId("holiday-source").href = data.holidaySource;
+        byId("holiday-warning").hidden = status?.holidayDelayed !== true;
+        byId("official-links").replaceChildren(...data.calendars.map((url, i) => {
+          const line = create("span");
+          if (i) line.append(" ／ ");
+          line.append(sourceLink(url, i ? "公式カレンダー " + (i + 1) : "Pococha公式カレンダー"));
+          return line;
+        }));
+        if (data.imageReviewSince) {
+          const notice = byId("image-review");
+          notice.hidden = false;
+          notice.textContent = "公式カレンダー画像のリンクが変更されました。最新の掲載内容は公式カレンダーで確認できます。";
+        }
+        showStatus(status);
+        render();
+      })
+      .catch(() => {
+        byId("status").classList.add("delayed");
+        byId("status").textContent = "予測データを読み込めませんでした";
+        byId("event-message").textContent = "公開イベントのデータを読み込めませんでした。";
+      });
+  </script>
+</body>
+</html>
