@@ -1,0 +1,4 @@
+# Deny dotfiles and dot-directories (state, cron, lock, temp files, .gitignore, .git/)
+<If "%{REQUEST_URI} =~ m#/\.#">
+    Require all denied
+</If>
