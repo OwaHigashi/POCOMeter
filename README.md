@@ -32,4 +32,7 @@ php -S 127.0.0.1:8000
 
 ## コントリビューター
 
+尾和 東　（おわ）
+ぽこちゃ演奏枠
+
 [OwaHigashi](https://github.com/OwaHigashi)
