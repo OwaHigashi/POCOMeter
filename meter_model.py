@@ -23,10 +23,11 @@ WEEKDAY_HISTORY = 56
 WEEKDAY_MIN_WEEKS = 2
 WEEKDAY_SHRINKAGE = 4
 BASE_MODELS = ("median", "weekday", "ridge")
-# Shorter than 30 days so level shifts are tracked; backtested on Oct-Nov 2026 data.
-BASELINE_DAYS = 14
+# 30 days spans a whole month's swing; it beat 7-21 days on 2022-06..2026-11 borders (MAPE 13.7% vs 14.3% for 14).
+BASELINE_DAYS = 30
 PUBLISH_LAG = 2 * DAY  # The source posts each day's borders the next day or later.
 MONTH_END_DAYS = 2  # Borders ran 6-9% above normal on the last two days of Sep and Oct 2026.
+MONTH_START_DAYS = 3  # The first three days ran 5-15% above forecast in 2022-2023, fading to 1-2% by 2026.
 RANGE_SHARE = .8  # Share of actual borders the published range should hold.
 
 
@@ -247,27 +248,38 @@ def vacation_features(day, hour, holidays):
     )]
 
 
-def month_end_share(day, hour):
-    """Share of the closing window that falls on the last MONTH_END_DAYS days of a month."""
+def window_share(day, hour, test):
+    """Share of the closing window that falls on civil days for which test(civil_day) holds."""
     start, end = day_window(day, hour)
     share = 0.
     for civil_day in dict.fromkeys([start.date(), (end - timedelta(microseconds=1)).date()]):
-        if ((civil_day.replace(day=28) + 4 * DAY).replace(day=1) - civil_day).days <= MONTH_END_DAYS:
+        if test(civil_day):
             midnight = datetime.combine(civil_day, time(), JST)
             share += (min(end, midnight + DAY) - max(start, midnight)).total_seconds() / 86400
     return share
 
 
+def month_end_share(day, hour):
+    return window_share(day, hour, lambda civil: ((civil.replace(day=28) + 4 * DAY).replace(day=1) - civil).days
+                        <= MONTH_END_DAYS)
+
+
+def month_start_share(day, hour):
+    return window_share(day, hour, lambda civil: civil.day <= MONTH_START_DAYS)
+
+
 def corrections(replays, holidays, dates):
-    """Learn month-end and holiday shifts (log multipliers) from the weekday forecast's replay errors.
+    """Learn level, month-start/end and holiday shifts (log multipliers) from the weekday forecast's replay errors.
 
     Each closing window's error is averaged over all ranks, so the fit sees market-wide moves only.
+    Refit monthly on 2023-2026 borders, this cut MAPE from 13.49% to 13.33% (Sep-Nov 2026: 12.20% to 11.79%),
+    mostly through the overall level term.
     Event-type shifts are left at zero: fitted on Oct-Nov 2026 they changed sign from week to week
     and made later weeks worse (MAPE 12.3% -> 13.3-13.6%), so the slot stays for a future model.
     """
     @lru_cache(maxsize=None)
     def calendar_for(day, hour):
-        return [month_end_share(day, hour), *vacation_features(day, hour, holidays)]
+        return [month_end_share(day, hour), month_start_share(day, hour), *vacation_features(day, hour, holidays)]
 
     windows = {}
     for key, borders in replays.items():
@@ -275,21 +287,23 @@ def corrections(replays, holidays, dates):
         for pairs in borders:
             for day, forecast, actual in pairs:
                 windows.setdefault((day, hour), []).append(log(actual / forecast))
-    calendar = [0.] * 4
+    level, *calendar = [0.] * 6
     if len(windows) >= 7:
-        # The intercept takes the overall bias, which past errors did not predict.
-        calendar = fit_ridge([([1, *calendar_for(day, hour)], mean(errors))
-                              for (day, hour), errors in windows.items()])[1:]
+        level, *calendar = fit_ridge([([1, *calendar_for(day, hour)], mean(errors))
+                                      for (day, hour), errors in windows.items()])
     adjustments, diagnostics = {}, {}
     for hour in CLOSES:
         days = {day for day, close in windows if close == hour}
         diagnostics[hour] = {
             "days": len(days),
-            "holidayDays": sum(calendar_for(day, hour)[1] > 0 for day in days),
+            "holidayDays": sum(calendar_for(day, hour)[2] > 0 for day in days),
             "monthEndDays": sum(calendar_for(day, hour)[0] > 0 for day in days),
+            "monthStartDays": sum(calendar_for(day, hour)[1] > 0 for day in days),
             "monthEndPercent": round((exp(calendar[0]) - 1) * 100, 1),
+            "monthStartPercent": round((exp(calendar[1]) - 1) * 100, 1),
+            "levelPercent": round((exp(level) - 1) * 100, 1),
         }
-        shifts = {day.isoformat(): (sum(a * b for a, b in zip(calendar, calendar_for(day, hour))), 0., 0.)
+        shifts = {day.isoformat(): (level + sum(a * b for a, b in zip(calendar, calendar_for(day, hour))), 0., 0.)
                   for day in dates}
         adjustments[hour] = dict.fromkeys(RANKS, shifts)
     return adjustments, diagnostics
@@ -447,7 +461,7 @@ def replay(records, peers, hour, now, history=VALIDATION_HISTORY):
 def spread(pairs, share=.85):
     """Multipliers that held the middle `share` of actual/forecast ratios, or None if too few.
 
-    Past errors run narrow on new days: the middle 85% held 80% (RANGE_SHARE) of Oct-Nov 2026 actuals.
+    Past errors run narrow on new days: refit monthly, the middle 85% held 80-83% of 2024-2026 actuals (RANGE_SHARE).
     """
     ratios = sorted(actual / forecast for _, forecast, actual in pairs)
     if len(ratios) < 20:

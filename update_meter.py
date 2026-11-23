@@ -11,6 +11,7 @@ from functools import lru_cache
 from hashlib import sha256
 import json
 from io import StringIO
+from math import exp
 import os
 from pathlib import Path
 import re
@@ -696,10 +697,13 @@ def build_report(database, summaries, now, prior, bootstrap, calendars):
                 for key, (rank, hour) in SERIES.items()}
     replays = {key: replay(records_by_series.get(key, {}), peers_of[key], hour, now, MODEL_HISTORY)
                for key, (_, hour) in SERIES.items()}
-    context, context_training = corrections(replays, holidays, dates)
     recent = today - VALIDATION_HISTORY * DAY
-    recent_replays = {key: [[row for row in rows if row[0] >= recent] for rows in borders]
-                      for key, borders in replays.items()}
+    recent_days = sorted({row[0] for borders in replays.values() for rows in borders for row in rows if row[0] >= recent})
+    context, context_training = corrections(replays, holidays, [*recent_days, *dates])
+    # Score and size ranges on the corrected forecast, as published.
+    recent_replays = {key: [[(day, round(forecast * exp(context[hour][rank][day.isoformat()][0])), actual)
+                             for day, forecast, actual in rows if day >= recent] for rows in borders]
+                      for key, borders in replays.items() for rank, hour in [SERIES[key]]}
     pooled = {(hour, border): [row for key, (_, close) in SERIES.items() if close == hour
                                for row in recent_replays[key][border]]
               for hour in CLOSES for border in range(3)}
@@ -799,10 +803,13 @@ def run(now, seed_path):
         reference_failed = False
         holiday_failed = False
     else:
+        backfill = not database["records"] or prior.get("bootstrap")
+        # A day appears only after its window closes, so a series holding that day has nothing new.
+        wanted = [key for key, (_, hour) in SERIES.items() if backfill
+                  or (now - timedelta(hours=hour)).date().isoformat() not in database["records"].get(key, {})]
         with ThreadPoolExecutor(max_workers=4) as pool:
-            observations = list(pool.map(
-                lambda key: fetch_series(key, now, not database["records"] or prior.get("bootstrap")), SERIES
-            ))
+            observations = list(pool.map(lambda key: fetch_series(key, now, backfill), wanted))
+        print(f"Fetched {len(wanted)} of {len(SERIES)} series; the rest already hold their newest closed day.")
         notice_batches, calendars, images = official_events(reviewed, now, prior.get("calendars"))
         if not notice_batches:
             # A valid feed can contain no event announcements.

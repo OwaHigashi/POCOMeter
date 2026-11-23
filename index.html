@@ -288,9 +288,9 @@
     </div>
     <details class="details panel">
       <summary>予測方法と検証結果</summary>
-      <p class="secondary">曜日別の暫定予測は、直近14日中央値を、過去56日の曜日傾向で調整します。各日の値を同じ週の中央値と比べ、同じ曜日の観測が少ないほど調整幅を小さくします。その系列の実績が少ない場合は、同じ締め時間・ランク帯の曜日傾向を使います。</p>
-      <p class="secondary">月末・休日の補正は、曜日別予測を過去の日について計算し直したときの誤差から推定します。全ランク共通の誤差を、締め区間が月末2日間や休日・休暇に重なる割合で説明します。イベントの種類別の補正は、一部のランクだけが対象のイベントで検証したところ、週ごとに効果の向きが変わり精度が下がったため使っていません。</p>
-      <p class="secondary">予測の範囲は、過去90日の予測誤差のうち中央の85%から求めています。2026年10〜11月の検証では、実績の約80%がこの範囲に入りました。</p>
+      <p class="secondary">曜日別の暫定予測は、直近30日中央値を、過去56日の曜日傾向で調整します。各日の値を同じ週の中央値と比べ、同じ曜日の観測が少ないほど調整幅を小さくします。その系列の実績が少ない場合は、同じ締め時間・ランク帯の曜日傾向を使います。</p>
+      <p class="secondary">月初・月末・休日の補正は、曜日別予測を過去400日について計算し直したときの誤差から推定します。全ランク共通の誤差を、全体の水準のずれと、締め区間が月初3日間・月末2日間・休日・休暇に重なる割合で説明します。イベントの種類別の補正は、一部のランクだけが対象のイベントで検証したところ、週ごとに効果の向きが変わり精度が下がったため使っていません。</p>
+      <p class="secondary">予測の範囲は、過去90日の予測誤差のうち中央の85%から求めています。2024年1月〜2026年11月の検証では、実績の80〜83%がこの範囲に入りました。</p>
       <p class="secondary">検証では、締めまでの24時間が始まる時点で確認済みだった情報を使い、中央値、曜日別予測、曜日・休日を使う正則化回帰、イベント回帰を比較します。予定と実績を後から照合した暫定補正の精度は、まだ検証できていません。</p>
       <p class="secondary">休日の入力は、祝日・振替休日など、お盆（8月13〜16日を目安）、年末年始（12月29日〜1月3日）との重なりです。先の日付ではイベントが追加・変更されることがあります。予測日までの日数ごとの精度は検証中です。</p>
       <div id="validation" class="secondary"></div>
@@ -349,7 +349,7 @@
 
     function methodTitle(method) {
       return ({
-        median: "直近14日中央値",
+        median: "直近30日中央値",
         source_median: "公開30日中央値",
         weekday: "曜日別予測",
         ridge: "正則化回帰",
@@ -393,7 +393,7 @@
         }
         if (basis.context) {
           const effects = [];
-          if (basis.context.holiday) effects.push("月末・休日 " + signedPoints.format(basis.context.holiday));
+          if (basis.context.holiday) effects.push("水準・月初・月末・休日 " + signedPoints.format(basis.context.holiday));
           if (hasSchedule && basis.context.events) effects.push("イベント " + signedPoints.format(basis.context.events));
           if (effects.length) info.append(create("span", effects.join(" ／ ") + " pt"));
         }
@@ -428,9 +428,9 @@
       const training = byId("context-training");
       training.hidden = !(applied && diagnostics?.days);
       if (!training.hidden) {
-        training.textContent = "月末・休日の補正は、曜日別予測の過去の誤差 " + diagnostics.days +
-          "日分（月末を含む日 " + diagnostics.monthEndDays + "日分、休日・休暇を含む日 " +
-          diagnostics.holidayDays + "日分）から推定しています。";
+        training.textContent = "月初・月末・休日の補正は、曜日別予測の過去の誤差 " + diagnostics.days +
+          "日分（月初を含む日 " + diagnostics.monthStartDays + "日分、月末を含む日 " + diagnostics.monthEndDays +
+          "日分、休日・休暇を含む日 " + diagnostics.holidayDays + "日分）から推定しています。";
       }
 
       const holidays = data.holidayWindows?.[hour]?.[day] || [];

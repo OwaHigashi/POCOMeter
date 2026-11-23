@@ -1,7 +1,7 @@
 """Self-checks for the accuracy helpers. Run: python3 -B test_meter_model.py"""
 from datetime import date, datetime
 
-from meter_model import DAY, JST, accuracy, month_end_share, replay, spread
+from meter_model import DAY, JST, accuracy, month_end_share, month_start_share, replay, spread
 
 
 def test_accuracy():
@@ -26,6 +26,8 @@ def test_month_end_share():
     assert month_end_share(date(2026, 10, 29), 24) == 0
     assert abs(month_end_share(date(2026, 11, 1), 13) - 11 / 24) < 1e-9  # 10/31 13:00 to 11/1 13:00
     assert abs(month_end_share(date(2026, 10, 30), 13) - 13 / 24) < 1e-9  # 10/30 is the second-to-last day
+    assert month_start_share(date(2026, 11, 3), 24) == 1 and month_start_share(date(2026, 11, 4), 24) == 0
+    assert abs(month_start_share(date(2026, 11, 4), 13) - 11 / 24) < 1e-9  # 11/3 13:00 to 11/4 13:00
 
 
 def test_spread():
