@@ -26,8 +26,8 @@ import xml.etree.ElementTree as ET
 
 from meter_model import (
     CLOSES, DAY, JST, MODEL_HISTORY, PUBLISH_LAG, RANGE_SHARE, RANKS, VALIDATION_HISTORY, accuracy, as_time, calendar_windows,
-    corrections, day_window, event_windows, events_at, holidays_at, replay, series_forecast, simultaneous_hours, spread,
-    window_months,
+    corrections, day_window, event_windows, events_at, holidays_at, rank_features, rank_model, replay, series_forecast,
+    simultaneous_hours, spread, window_months,
 )
 
 ROOT = Path(__file__).resolve().parent
@@ -698,12 +698,22 @@ def build_report(database, summaries, now, prior, bootstrap, calendars):
     replays = {key: replay(records_by_series.get(key, {}), peers_of[key], hour, now, MODEL_HISTORY)
                for key, (_, hour) in SERIES.items()}
     recent = today - VALIDATION_HISTORY * DAY
-    recent_days = sorted({row[0] for borders in replays.values() for rows in borders for row in rows if row[0] >= recent})
-    context, context_training = corrections(replays, holidays, [*recent_days, *dates])
-    # Score and size ranges on the corrected forecast, as published.
-    recent_replays = {key: [[(day, round(forecast * exp(context[hour][rank][day.isoformat()][0])), actual)
-                             for day, forecast, actual in rows if day >= recent] for rows in borders]
-                      for key, borders in replays.items() for rank, hour in [SERIES[key]]}
+    replay_days = sorted({row[0] for borders in replays.values() for rows in borders for row in rows})
+    context, context_training = corrections(replays, holidays, [*replay_days, *dates])
+    rank_shift = rank_model(replays, context, holidays, today)
+    # Score and size ranges on the corrected forecast, as published, with a per-rank model that has not seen them.
+    unseen = rank_model(replays, context, holidays, recent - DAY)
+    recent_replays = {}
+    for key, borders in replays.items():
+        rank, hour = SERIES[key]
+        recent_replays[key] = []
+        for border, rows in enumerate(borders):
+            rows = [row for row in rows if row[0] >= recent]
+            shifts = unseen([rank_features(rank, hour, border, day, factor, holidays)
+                             for day, _, _, factor in rows]) if unseen and rows else [0.] * len(rows)
+            recent_replays[key].append([
+                (day, round(forecast * exp(context[hour][rank][day.isoformat()][0] + shift)), actual)
+                for (day, forecast, actual, _), shift in zip(rows, shifts)])
     pooled = {(hour, border): [row for key, (_, close) in SERIES.items() if close == hour
                                for row in recent_replays[key][border]]
               for hour in CLOSES for border in range(3)}
@@ -715,7 +725,7 @@ def build_report(database, summaries, now, prior, bootstrap, calendars):
         peers = peers_of[key]
         forecasts, validation = series_forecast(
             records, peers, rank, hour, database, now, dates, event_gaps[str(hour)], summaries.get(key),
-            context[hour].get(rank),
+            context[hour].get(rank), rank_shift,
         )
         default = forecasts[today.isoformat()]
         weekday_defaults = {}

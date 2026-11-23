@@ -29,6 +29,10 @@ PUBLISH_LAG = 2 * DAY  # The source posts each day's borders the next day or lat
 MONTH_END_DAYS = 2  # Borders ran 6-9% above normal on the last two days of Sep and Oct 2026.
 MONTH_START_DAYS = 3  # The first three days ran 5-15% above forecast in 2022-2023, fading to 1-2% by 2026.
 RANGE_SHARE = .8  # Share of actual borders the published range should hold.
+RANK_HISTORY = 365  # Days of replay errors the per-rank model learns from.
+# Share of the per-rank model's correction that is applied. Refit monthly and chosen on Jan 2025-Aug 2026
+# (MAPE 10.98% -> 10.36%; 0.5 gave 10.44%, 1.0 gave 10.39%); Sep-Nov 2026 went from 11.79% to 11.67%.
+RANK_SHARE = .75
 
 
 @lru_cache(maxsize=4096)
@@ -285,7 +289,7 @@ def corrections(replays, holidays, dates):
     for key, borders in replays.items():
         hour = int(key.split("/")[1])
         for pairs in borders:
-            for day, forecast, actual in pairs:
+            for day, forecast, actual, _ in pairs:
                 windows.setdefault((day, hour), []).append(log(actual / forecast))
     level, *calendar = [0.] * 6
     if len(windows) >= 7:
@@ -427,7 +431,7 @@ def accuracy(pairs):
 def replay(records, peers, hour, now, history=VALIDATION_HISTORY):
     """Rerun the weekday forecast for past days, treating each border as public PUBLISH_LAG after its close.
 
-    Returns (day, forecast, actual) triples per border.
+    Returns (day, forecast, actual, weekday factor) per border.
     """
     def published(series):
         rows = [(day, versions[-1][1]) for day, versions in sorted(series.items())]
@@ -454,8 +458,42 @@ def replay(records, peers, hour, now, history=VALIDATION_HISTORY):
             typical, _, _, last = baseline(rows, day, cutoff, border)
             if value and typical is not None:
                 factor = weekday_factors(rows, peer_rows, last, border)[day.weekday()][0]
-                pairs[border].append((day, round(typical * factor), value))
+                pairs[border].append((day, round(typical * factor), value, factor))
     return pairs
+
+
+def rank_features(rank, hour, border, day, factor, holidays):
+    left = ((day.replace(day=28) + 4 * DAY).replace(day=1) - day).days
+    return [RANKS.index(rank), hour, border, day.weekday(), day.day, left, log(factor),
+            *vacation_features(day, hour, holidays), float(day.isoformat() in holidays)]
+
+
+def rank_model(replays, context, holidays, last):
+    """Fit LightGBM to what the level/calendar correction left of the replayed errors up to `last`.
+
+    Returns predict(feature rows) -> log shifts already scaled by RANK_SHARE, or None with too little data.
+    Rank, close, border, weekday and day of month enter together, so each rank gets its own shift.
+    """
+    import lightgbm
+    import numpy
+
+    rows, targets = [], []
+    for key, borders in replays.items():
+        rank, hour = key.split("/")
+        for border, pairs in enumerate(borders):
+            for day, forecast, actual, factor in pairs:
+                if last - RANK_HISTORY * DAY < day <= last:
+                    rows.append(rank_features(rank, int(hour), border, day, factor, holidays))
+                    targets.append(log(actual / forecast) - context[int(hour)][rank][day.isoformat()][0])
+    if len(targets) < 1000:
+        return None
+    model = lightgbm.train(
+        {"objective": "regression", "learning_rate": .03, "num_leaves": 31, "min_data_in_leaf": 200,
+         "bagging_fraction": .8, "bagging_freq": 1, "feature_fraction": .8, "seed": 0, "num_threads": 1,
+         "verbose": -1},
+        lightgbm.Dataset(numpy.array(rows), numpy.array(targets)), num_boost_round=300,
+    )
+    return lambda features: (RANK_SHARE * model.predict(numpy.array(features))).tolist()
 
 
 def spread(pairs, share=.85):
@@ -463,14 +501,15 @@ def spread(pairs, share=.85):
 
     Past errors run narrow on new days: refit monthly, the middle 85% held 80-83% of 2024-2026 actuals (RANGE_SHARE).
     """
-    ratios = sorted(actual / forecast for _, forecast, actual in pairs)
+    ratios = sorted(actual / forecast for _, forecast, actual, *_ in pairs)
     if len(ratios) < 20:
         return None
     tail = (1 - share) / 2
     return [round(ratios[round(q * (len(ratios) - 1))], 3) for q in (tail, 1 - tail)]
 
 
-def series_forecast(records, peers, rank, hour, database, now, dates, event_gaps, aggregate=None, context=None):
+def series_forecast(records, peers, rank, hour, database, now, dates, event_gaps, aggregate=None, context=None,
+                    rank_shift=None):
     rows = known_rows(records, now.date() + DAY, now)
     peer_rows = [known_rows(peer, now.date() + DAY, now) for peer in peers]
     checks = [as_time(value) for value in database["event_checks"]]
@@ -504,6 +543,8 @@ def series_forecast(records, peers, rank, hour, database, now, dates, event_gaps
         prediction = {"points": [], "basis": []}
         predictions[iso] = prediction
         correction = context.get(iso) if context else None
+        rank_shifts = rank_shift([rank_features(rank, hour, i, target, weekday_profiles[i][target.weekday()][0], holidays)
+                                  for i in range(3)]) if rank_shift else [0.] * 3
         for i, evaluation in enumerate(evaluations):
             estimate, count, first, last = baseline(rows, target, now, i)
             method = evaluation["method"]
@@ -543,10 +584,16 @@ def series_forecast(records, peers, rank, hour, database, now, dates, event_gaps
                     holiday_shift = 0.
                 if method == "events":
                     event_shift = reference_shift
+                # The per-rank model learned the weekday forecast's errors, so regressions skip it.
+                ranked = 0. if basis.get("calendar") else rank_shifts[i]
                 with_holiday = round(estimate * exp(holiday_shift))
-                with_events = round(with_holiday * exp(event_shift))
+                with_rank = round(with_holiday * exp(ranked))
+                with_events = round(with_rank * exp(event_shift))
                 basis["context"] = {
-                    "holiday": with_holiday - estimate, "events": with_events - with_holiday,
+                    "holiday": with_holiday - estimate, "rank": with_rank - with_holiday,
+                    "events": with_events - with_rank,
+                    "holidayPercent": round((exp(holiday_shift) - 1) * 100, 1),
+                    "rankPercent": round((exp(ranked) - 1) * 100, 1),
                 }
                 estimate = with_events
             prediction["points"].append(estimate)

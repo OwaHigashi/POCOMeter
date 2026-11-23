@@ -22,6 +22,7 @@ function downloadCsv(string $day, array $selections): never
         'event_schedule_available', 'missing_event_months',
         'forecast_at', 'observations_at', 'latest_actual_date', 'last_update_attempt_at',
         'update_failed', 'forecast_source', 'actual_source', 'forecast_low', 'forecast_high',
+        'rank_adjustment_points', 'holiday_adjustment_percent', 'rank_adjustment_percent',
     ], ',', '"', '', "\r\n");
 
     foreach ($selections as $selection) {
@@ -61,6 +62,9 @@ function downloadCsv(string $day, array $selections): never
                 $selection['actual']['source'] ?? null,
                 $selection['forecast']['range'][$label][0] ?? null,
                 $selection['forecast']['range'][$label][1] ?? null,
+                $basis['context']['rank'] ?? null,
+                $basis['context']['holidayPercent'] ?? null,
+                $basis['context']['rankPercent'] ?? null,
             ], ',', '"', '', "\r\n");
         }
     }

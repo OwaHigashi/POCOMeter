@@ -290,11 +290,12 @@
       <summary>予測方法と検証結果</summary>
       <p class="secondary">曜日別の暫定予測は、直近30日中央値を、過去56日の曜日傾向で調整します。各日の値を同じ週の中央値と比べ、同じ曜日の観測が少ないほど調整幅を小さくします。その系列の実績が少ない場合は、同じ締め時間・ランク帯の曜日傾向を使います。</p>
       <p class="secondary">月初・月末・休日の補正は、曜日別予測を過去400日について計算し直したときの誤差から推定します。全ランク共通の誤差を、全体の水準のずれと、締め区間が月初3日間・月末2日間・休日・休暇に重なる割合で説明します。イベントの種類別の補正は、一部のランクだけが対象のイベントで検証したところ、週ごとに効果の向きが変わり精度が下がったため使っていません。</p>
-      <p class="secondary">予測の範囲は、過去90日の予測誤差のうち中央の85%から求めています。2024年1月〜2026年11月の検証では、実績の80〜83%がこの範囲に入りました。</p>
+      <p class="secondary">さらに、ランク別の補正を加えます。上の補正で残った過去365日の誤差を、ランク・締め時間・ボーダー・曜日・日付・休日から LightGBM（決定木を重ねる機械学習）で学習し、その75%を予測に掛けます。補正の割合はランクごとに異なり、各ボーダーの欄に「ランク別 ±X%」として表示します。2025年1月〜2026年8月の検証で平均誤差が10.98%から10.36%に、2026年9〜11月は11.79%から11.67%に下がりました。</p>
+      <p class="secondary">予測の範囲は、過去90日の予測誤差のうち中央の85%から求めています。2025年4月〜2026年11月の検証では、実績の82%（2026年9〜11月は78%）がこの範囲に入りました。</p>
       <p class="secondary">検証では、締めまでの24時間が始まる時点で確認済みだった情報を使い、中央値、曜日別予測、曜日・休日を使う正則化回帰、イベント回帰を比較します。予定と実績を後から照合した暫定補正の精度は、まだ検証できていません。</p>
-      <p class="secondary">休日の入力は、祝日・振替休日など、お盆（8月13〜16日を目安）、年末年始（12月29日〜1月3日）との重なりです。先の日付ではイベントが追加・変更されることがあります。予測日までの日数ごとの精度は検証中です。</p>
+      <p class="secondary">休日の入力は、祝日・振替休日など、お盆（8月13〜16日を目安）、年末年始（12月29日〜1月3日）との重なりです。24時締めはその日の0時〜24時の活動なので、祝日当日の24時締めは祝日として、祝日前日の24時締めは平日として扱います。13時・22時締めは前日の13時・22時からの24時間なので、祝日と重なる時間の割合だけ休日として扱います。先の日付ではイベントが追加・変更されることがあります。予測日までの日数ごとの精度は検証中です。</p>
       <div id="validation" class="secondary"></div>
-      <p class="secondary">精度の「過去データで再現」は、各日の締め区間が始まる時点で公開済みだった実績（締めの2日後に公開とみなします）だけで曜日別予測を計算し直した結果です。休日・イベントの暫定補正は含みません。「公開した予測」は、このサイトが実際に表示した予測と実績の比較です。偏りがプラスなら、予測が実績より高めです。</p>
+      <p class="secondary">精度の「過去データで再現」は、各日の締め区間が始まる時点で公開済みだった実績（締めの2日後に公開とみなします）だけで曜日別予測を計算し直した結果です。水準・月初・月末・休日の補正とランク別補正を含みます。ランク別補正は、対象の90日より前の誤差だけで学習したものを使います。「公開した予測」は、このサイトが実際に表示した予測と実績の比較です。偏りがプラスなら、予測が実績より高めです。</p>
     </details>
     <noscript><p class="section">実績と予測の表示にはJavaScriptを有効にしてください。</p></noscript>
   </main>
@@ -393,9 +394,14 @@
         }
         if (basis.context) {
           const effects = [];
-          if (basis.context.holiday) effects.push("水準・月初・月末・休日 " + signedPoints.format(basis.context.holiday));
-          if (hasSchedule && basis.context.events) effects.push("イベント " + signedPoints.format(basis.context.events));
-          if (effects.length) info.append(create("span", effects.join(" ／ ") + " pt"));
+          // Forecasts restored from older data carry points only.
+          const effect = (label, points, percent) => label + " " + (percent === undefined
+            ? signedPoints.format(points) + " pt"
+            : signedPercent.format(percent) + "%（" + signedPoints.format(points) + " pt）");
+          if (basis.context.holiday) effects.push(effect("水準・月初・月末・休日", basis.context.holiday, basis.context.holidayPercent));
+          if (basis.context.rank) effects.push(effect("ランク別", basis.context.rank, basis.context.rankPercent));
+          if (hasSchedule && basis.context.events) effects.push(effect("イベント", basis.context.events));
+          if (effects.length) info.append(create("span", effects.join(" ／ ")));
         }
         const range = series.range?.[i];
         if (range) {
