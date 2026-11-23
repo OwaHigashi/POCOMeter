@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="PocochaのD1〜S6、13時・22時・24時締めのランクメーター予測。公開実績と公式イベントを確認できます。">
-  <title>Pococha ランクメーター予測</title>
+  <title>Pocochaランクメータ予測 by おわ（ぽこちゃ技術枠）</title>
   <style>
     :root {
       color-scheme: light;
@@ -177,14 +177,14 @@
 <body>
   <header class="top">
     <div class="shell">
-      <span class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>Pococha メーター</span>
+      <span class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>OWA-Pocochaメーター</span>
       <span class="timezone">日本時間（JST）</span>
     </div>
   </header>
   <section class="hero">
     <div class="shell hero-inner">
       <div>
-        <h1>ランクメーター予測</h1>
+        <h1>Pocochaランクメータ予測 by おわ（ぽこちゃ技術枠）</h1>
         <p>日付・ランク・締め時間で、必要な応援ポイントの目安を確認。</p>
       </div>
       <p class="status" id="status" role="status">保存済みデータを読み込み中</p>
@@ -288,8 +288,8 @@
     </div>
     <details class="details panel">
       <summary>予測方法と検証結果</summary>
-      <p class="secondary">曜日別の暫定予測は、直近30日中央値を、過去56日の曜日傾向で調整します。各日の値を同じ週の中央値と比べ、同じ曜日の観測が少ないほど調整幅を小さくします。その系列の実績が少ない場合は、同じ締め時間・ランク帯の曜日傾向を使います。</p>
-      <p class="secondary">暫定補正は、過去の休日・イベント予定と実績を同じ締め時間で照合して推定します。イベントの対象ランク、種類、重複時間、ランキングの有無、最終日、同時開催を使います。イベントの増減は直近30日の通常の開催状況を基準にしています。</p>
+      <p class="secondary">曜日別の暫定予測は、直近14日中央値を、過去56日の曜日傾向で調整します。各日の値を同じ週の中央値と比べ、同じ曜日の観測が少ないほど調整幅を小さくします。その系列の実績が少ない場合は、同じ締め時間・ランク帯の曜日傾向を使います。</p>
+      <p class="secondary">暫定補正は、過去の休日・イベント予定と実績を同じ締め時間で照合して推定します。イベントの対象ランク、種類、重複時間、ランキングの有無、最終日、同時開催を使います。イベントの増減は直近14日の通常の開催状況を基準にしています。</p>
       <p class="secondary">検証では、締めまでの24時間が始まる時点で確認済みだった情報を使い、中央値、曜日別予測、曜日・休日を使う正則化回帰、イベント回帰を比較します。予定と実績を後から照合した暫定補正の精度は、まだ検証できていません。</p>
       <p class="secondary">休日の入力は、祝日・振替休日など、お盆（8月13〜16日を目安）、年末年始（12月29日〜1月3日）との重なりです。先の日付ではイベントが追加・変更されることがあります。予測日までの日数ごとの精度は検証中です。</p>
       <div id="validation" class="secondary"></div>
@@ -348,7 +348,7 @@
 
     function methodTitle(method) {
       return ({
-        median: "直近30日中央値",
+        median: "直近14日中央値",
         source_median: "公開30日中央値",
         weekday: "曜日別予測",
         ridge: "正則化回帰",
@@ -459,7 +459,7 @@
       } else if (prediction?.basis.some(basis => basis.weekday)) {
         explanation.textContent = "この予測は曜日の傾向を反映しています。休日補正は実績がそろってから検証します。";
       } else if (prediction?.basis.every(basis => ["median", "source_median"].includes(basis.method))) {
-        explanation.textContent = "この予測は30日中央値です。休日補正は実績がそろってから検証します。";
+        explanation.textContent = "この予測は直近の中央値です。休日補正は実績がそろってから検証します。";
       } else {
         explanation.textContent = "休日補正は実績がそろってから検証します。";
       }
@@ -602,11 +602,13 @@
 
     function showStatus(status) {
       const banner = byId("status");
-      const failure = status?.state === "delayed" &&
-        Date.parse(status.checked) >= Date.parse(data.observationsUpdated || data.updated);
-      banner.classList.toggle("delayed", failure);
-      const headline = failure ? "データの更新に失敗しました" : "保存済みの予測を表示";
+      const recent = Date.parse(status?.checked) >= Date.parse(data.observationsUpdated || data.updated);
+      const stale = recent && status.state === "stale";
+      const failure = recent && status.state === "delayed";
+      banner.classList.toggle("delayed", stale || failure);
+      const headline = stale ? "データ元の更新待ち" : failure ? "データの更新に失敗しました" : "保存済みの予測を表示";
       banner.replaceChildren(create("strong", headline));
+      if (stale) banner.append(create("small", "推しPメーターに新しい実績がまだ掲載されていないため、前回の予測を表示しています。"));
       if (failure) banner.append(create("small", "最後に取得できた過去実績に基づく予測を表示しています。"));
     }
 

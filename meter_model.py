@@ -22,6 +22,8 @@ WEEKDAY_HISTORY = 56
 WEEKDAY_MIN_WEEKS = 2
 WEEKDAY_SHRINKAGE = 4
 BASE_MODELS = ("median", "weekday", "ridge")
+# Shorter than 30 days so level shifts are tracked; backtested on Oct-Nov 2026 data.
+BASELINE_DAYS = 14
 
 
 @lru_cache(maxsize=4096)
@@ -141,7 +143,7 @@ def known_rows(records, target, cutoff):
 
 def baseline(rows, target, cutoff, border):
     last = min(target, cutoff.date()) - DAY
-    first = last - 29 * DAY
+    first = last - (BASELINE_DAYS - 1) * DAY
     values = [points[border] for day, points in rows
               if first <= day <= last and points[border] is not None]
     return (round(median(values)) if values else None), len(values), first, last
@@ -324,7 +326,7 @@ def context_for_close(records, now, dates, events, event_months, holidays, gaps,
     # The intercept and six weekday terms control for the baseline's weekday effects.
     holiday_coefficients, schedule_coefficients = coefficients[7:10], coefficients[10:]
     results = {}
-    recent = [now.date() - DAY * offset for offset in range(1, 31)]
+    recent = [now.date() - DAY * offset for offset in range(1, BASELINE_DAYS + 1)]
     recent = [day for day in recent if all(month in event_months for month in window_months(day, hour))]
     for rank in RANKS:
         typical = [features_for(rank, day) for day in (recent or dated_samples)]

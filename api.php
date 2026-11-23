@@ -181,7 +181,7 @@ function seriesResponse(array $snapshot, ?array $status, DateTimeImmutable $cale
 
     $observationsUpdated = $snapshot['observationsUpdated'] ?? $snapshot['updated'];
     $lastAttemptAt = $status['checked'] ?? null;
-    $updateFailed = ($status['state'] ?? null) === 'delayed'
+    $updateFailed = in_array($status['state'] ?? null, ['delayed', 'stale'], true)
         && $lastAttemptAt !== null
         && strtotime($lastAttemptAt) >= strtotime($observationsUpdated);
 

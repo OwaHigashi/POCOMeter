@@ -614,6 +614,10 @@ def official_events(reviewed, now, previous_calendars):
     return notices, sorted(calendars), images
 
 
+class StaleSource(ValueError):
+    """The source has not published recent borders yet."""
+
+
 def read_json(path, default=None):
     if path.exists():
         return json.loads(path.read_text())
@@ -812,9 +816,10 @@ def run(now, seed_path):
             recent_count = sum(date.fromisoformat(day) >= now.date() - 30 * DAY for day in series)
             old_latest = prior.get("series", {}).get(key, {}).get("latest")
             if (newest is None or recent_count < 7
-                    or (old_latest and newest < old_latest)
-                    or (now.date() - date.fromisoformat(newest)).days > 4):
+                    or (old_latest and newest < old_latest)):
                 raise ValueError(f"{rank} {hour}: recent source coverage failed validation")
+            if (now.date() - date.fromisoformat(newest)).days > 4:
+                raise StaleSource(f"{rank} {hour}: source has no record after {newest}")
     put_version(database["events"].setdefault("reviewed", []), stamp, reviewed)
     for source, events in notice_batches.items():
         versions = database["events"].get(source, [])
@@ -847,7 +852,8 @@ def main():
             source_status = run(now, options.seed)
         except Exception as error:
             atomic_json(ROOT / "status.json", {
-                "checked": datetime.now(JST).isoformat(), "state": "delayed",
+                "checked": datetime.now(JST).isoformat(),
+                "state": "stale" if isinstance(error, StaleSource) else "delayed",
             })
             print(f"Rank meter update failed: {error}", file=sys.stderr)
             return 1
