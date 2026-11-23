@@ -289,11 +289,12 @@
     <details class="details panel">
       <summary>予測方法と検証結果</summary>
       <p class="secondary">曜日別の暫定予測は、直近14日中央値を、過去56日の曜日傾向で調整します。各日の値を同じ週の中央値と比べ、同じ曜日の観測が少ないほど調整幅を小さくします。その系列の実績が少ない場合は、同じ締め時間・ランク帯の曜日傾向を使います。</p>
-      <p class="secondary">暫定補正は、過去の休日・イベント予定と実績を同じ締め時間で照合して推定します。イベントの対象ランク、種類、重複時間、ランキングの有無、最終日、同時開催を使います。イベントの増減は直近14日の通常の開催状況を基準にしています。</p>
+      <p class="secondary">月末・休日の補正は、曜日別予測を過去の日について計算し直したときの誤差から推定します。全ランク共通の誤差を、締め区間が月末2日間や休日・休暇に重なる割合で説明します。イベントの種類別の補正は、一部のランクだけが対象のイベントで検証したところ、週ごとに効果の向きが変わり精度が下がったため使っていません。</p>
+      <p class="secondary">予測の範囲は、過去90日の予測誤差のうち中央の85%から求めています。2026年10〜11月の検証では、実績の約80%がこの範囲に入りました。</p>
       <p class="secondary">検証では、締めまでの24時間が始まる時点で確認済みだった情報を使い、中央値、曜日別予測、曜日・休日を使う正則化回帰、イベント回帰を比較します。予定と実績を後から照合した暫定補正の精度は、まだ検証できていません。</p>
       <p class="secondary">休日の入力は、祝日・振替休日など、お盆（8月13〜16日を目安）、年末年始（12月29日〜1月3日）との重なりです。先の日付ではイベントが追加・変更されることがあります。予測日までの日数ごとの精度は検証中です。</p>
       <div id="validation" class="secondary"></div>
-      <p class="secondary">参考比較は13時締めのB1・A1の24件です。平均絶対割合誤差（MAPE）は中央値 8.06%、イベント補正あり 8.60%、前週同曜日 11.27%でした。</p>
+      <p class="secondary">精度の「過去データで再現」は、各日の締め区間が始まる時点で公開済みだった実績（締めの2日後に公開とみなします）だけで曜日別予測を計算し直した結果です。休日・イベントの暫定補正は含みません。「公開した予測」は、このサイトが実際に表示した予測と実績の比較です。偏りがプラスなら、予測が実績より高めです。</p>
     </details>
     <noscript><p class="section">実績と予測の表示にはJavaScriptを有効にしてください。</p></noscript>
   </main>
@@ -377,9 +378,7 @@
           return;
         }
         const hasSchedule = !data.eventGaps?.[hour]?.[day];
-        const title = basis.context
-          ? (hasSchedule ? "休日・イベント込みの暫定予測" : "曜日・休日の暫定予測")
-          : (basis.weekday?.provisional ? "曜日別の暫定予測" : methodTitle(basis.method));
+        const title = basis.weekday?.provisional ? "曜日別の暫定予測" : methodTitle(basis.method);
         info.append(create("strong", title));
         const interval = shortDate(basis.from) + "〜" + shortDate(basis.through);
         if (basis.source) {
@@ -394,13 +393,14 @@
         }
         if (basis.context) {
           const effects = [];
-          if (data.holidayWindows?.[hour]?.[day]?.length && !basis.calendar) {
-            effects.push("休日 " + signedPoints.format(basis.context.holiday));
-          }
-          if (hasSchedule) {
-            effects.push("イベント " + signedPoints.format(basis.context.events));
-          }
+          if (basis.context.holiday) effects.push("月末・休日 " + signedPoints.format(basis.context.holiday));
+          if (hasSchedule && basis.context.events) effects.push("イベント " + signedPoints.format(basis.context.events));
           if (effects.length) info.append(create("span", effects.join(" ／ ") + " pt"));
+        }
+        const range = series.range?.[i];
+        if (range) {
+          info.append(create("span", Math.round(data.accuracy.rangeShare * 10) + "割の範囲 " +
+            point(Math.round(value * range[0])) + "〜" + point(Math.round(value * range[1]))));
         }
       });
       byId("actual-line").hidden = !actual || !prediction;
@@ -424,12 +424,13 @@
       }
 
       const diagnostics = data.contextTraining?.[hour];
-      const applied = prediction?.basis.some(basis => basis.context);
+      const applied = prediction?.basis.some(basis => basis.context?.holiday);
       const training = byId("context-training");
       training.hidden = !(applied && diagnostics?.days);
       if (!training.hidden) {
-        training.textContent = "暫定補正には、過去の予定と照合できた実績 " + diagnostics.days +
-          "日分（休日・休暇を含む日 " + diagnostics.holidayDays + "日分）を使用しています。";
+        training.textContent = "月末・休日の補正は、曜日別予測の過去の誤差 " + diagnostics.days +
+          "日分（月末を含む日 " + diagnostics.monthEndDays + "日分、休日・休暇を含む日 " +
+          diagnostics.holidayDays + "日分）から推定しています。";
       }
 
       const holidays = data.holidayWindows?.[hour]?.[day] || [];
@@ -512,10 +513,8 @@
         ? "公式告知で確認できたイベント " + confirmed.length + "件" + overlap + "。"
         : "この締め区間に重なる公式告知は確認できていません。";
       if (entries.length && prediction && !data.eventGaps?.[hour]?.[day]) {
-        if (prediction.basis.some(basis => basis.context)) {
-          message.textContent += " 参考一覧を含む開催予定を暫定補正に使用しています。";
-        } else if (!prediction.basis.some(basis => basis.method === "events")) {
-          message.textContent += " イベント補正に使える実績がまだありません。";
+        if (!prediction.basis.some(basis => basis.method === "events")) {
+          message.textContent += " イベントの種類別の補正は、検証で精度が下がったため使っていません。";
         }
       }
       for (const entry of entries) {
@@ -555,8 +554,38 @@
     function drawValidation(series) {
       const content = byId("validation");
       content.replaceChildren();
+      const percent = value => value.toFixed(1) + "%";
+      const overall = data.accuracy;
+      if (overall?.replay.n) {
+        const published = overall.published.n ? `公開した予測 ${percent(overall.published.mape)}（${overall.published.n}件）／` : "";
+        content.append(create("p", `全ランク・締め時間の平均誤差（MAPE）：${published}過去データで再現 ${percent(overall.replay.mape)}（${overall.replay.n}件、±10%以内 ${overall.replay.within10}%、±20%以内 ${overall.replay.within20}%、偏り ${overall.replay.bias > 0 ? "+" : ""}${percent(overall.replay.bias)}）`));
+      }
+      const tracks = series.accuracy ? [["公開した予測", series.accuracy.published], ["過去データで再現", series.accuracy.replay]] : [];
+      if (tracks.some(([, scores]) => scores.some(score => score.n))) {
+        const wrap = create("div", null, "table-scroll");
+        const table = create("table");
+        const top = table.createTHead().insertRow();
+        for (const text of ["ボーダー", "検証", "日数", "平均誤差", "±10%以内", "±20%以内", "偏り"]) {
+          const cell = create("th", text);
+          cell.scope = "col";
+          top.append(cell);
+        }
+        const body = table.createTBody();
+        labels.forEach((label, i) => {
+          for (const [name, scores] of tracks) {
+            const score = scores[i];
+            if (!score.n) continue;
+            const values = [label, name, score.n, percent(score.mape), score.within10 + "%", score.within20 + "%",
+              (score.bias > 0 ? "+" : "") + percent(score.bias)];
+            const row = body.insertRow();
+            for (const value of values) row.insertCell().textContent = value;
+          }
+        });
+        wrap.append(table);
+        content.append(create("p", "このランク・締め時間の予測精度"), wrap);
+      }
       if (!series.validation.some(result => result.n)) {
-        content.append(create("p", "このランク・締め時間では、同じ予測条件で比較できる実績がまだありません。"));
+        content.append(create("p", "予測方式の比較に使える、同じ予測条件の実績はまだありません。"));
         return;
       }
       const wrap = create("div", null, "table-scroll");
@@ -579,7 +608,7 @@
         }
       });
       wrap.append(table);
-      content.append(create("p", "同じ日で比較した平均絶対割合誤差（MAPE）"), wrap);
+      content.append(create("p", "予測方式の比較：同じ日で比較した平均絶対割合誤差（MAPE）"), wrap);
     }
 
     function render() {
@@ -608,7 +637,7 @@
       banner.classList.toggle("delayed", stale || failure);
       const headline = stale ? "データ元の更新待ち" : failure ? "データの更新に失敗しました" : "保存済みの予測を表示";
       banner.replaceChildren(create("strong", headline));
-      if (stale) banner.append(create("small", "推しPメーターに新しい実績がまだ掲載されていないため、前回の予測を表示しています。"));
+      if (stale) banner.append(create("small", `推しPメーターに新しい実績がまだ掲載されていません。取得できた最新の実績（${data.latest.slice(5).replace("-", "/")}まで）で予測しています。`));
       if (failure) banner.append(create("small", "最後に取得できた過去実績に基づく予測を表示しています。"));
     }
 

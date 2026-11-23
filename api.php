@@ -151,11 +151,21 @@ function seriesResponse(array $snapshot, ?array $status, DateTimeImmutable $cale
         $forecast = $series['forecastByWeekday'][$calendarDay->format('w')] ?? $series['forecastDefault'];
     }
     if ($forecast !== null) {
+        $range = [];
+        foreach ($forecast['points'] as $i => $points) {
+            $ratios = $series['range'][$i] ?? null;
+            $range[] = $points === null || $ratios === null
+                ? null : [(int) round($points * $ratios[0]), (int) round($points * $ratios[1])];
+        }
         $forecast = [
             'points' => array_combine(BORDER_LABELS, $forecast['points']),
+            'range' => array_combine(BORDER_LABELS, $range),
             'basis' => array_combine(BORDER_LABELS, $forecast['basis']),
         ];
     }
+    $accuracy = isset($series['accuracy'])
+        ? array_map(fn(array $scores): array => array_combine(BORDER_LABELS, $scores), $series['accuracy'])
+        : null;
     $actual = $series['actuals'][$day] ?? null;
     if ($actual !== null) {
         $actual = ['points' => array_combine(BORDER_LABELS, $actual[0]), 'source' => $actual[1]];
@@ -181,7 +191,7 @@ function seriesResponse(array $snapshot, ?array $status, DateTimeImmutable $cale
 
     $observationsUpdated = $snapshot['observationsUpdated'] ?? $snapshot['updated'];
     $lastAttemptAt = $status['checked'] ?? null;
-    $updateFailed = in_array($status['state'] ?? null, ['delayed', 'stale'], true)
+    $updateFailed = ($status['state'] ?? null) === 'delayed'
         && $lastAttemptAt !== null
         && strtotime($lastAttemptAt) >= strtotime($observationsUpdated);
 
@@ -193,6 +203,7 @@ function seriesResponse(array $snapshot, ?array $status, DateTimeImmutable $cale
         'window' => ['start' => $start->format(DATE_ATOM), 'end' => $end->format(DATE_ATOM), 'timezone' => TIME_ZONE],
         'forecast' => $forecast,
         'actual' => $actual,
+        'accuracy' => $accuracy,
         'holidays' => $snapshot['holidayWindows'][$close][$day] ?? [],
         'events' => [
             'scheduleAvailable' => $missingMonths === [],

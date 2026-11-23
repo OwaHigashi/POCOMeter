@@ -1,9 +1,10 @@
 """Point-in-time features and rolling validation for rank-meter forecasts."""
 
+from bisect import bisect_left, bisect_right
 from datetime import date, datetime, time, timedelta, timezone
 from functools import lru_cache
 from itertools import repeat
-from math import exp, log, log1p
+from math import exp, log
 from statistics import mean, median
 
 JST = timezone(timedelta(hours=9), "JST")
@@ -24,6 +25,9 @@ WEEKDAY_SHRINKAGE = 4
 BASE_MODELS = ("median", "weekday", "ridge")
 # Shorter than 30 days so level shifts are tracked; backtested on Oct-Nov 2026 data.
 BASELINE_DAYS = 14
+PUBLISH_LAG = 2 * DAY  # The source posts each day's borders the next day or later.
+MONTH_END_DAYS = 2  # Borders ran 6-9% above normal on the last two days of Sep and Oct 2026.
+RANGE_SHARE = .8  # Share of actual borders the published range should hold.
 
 
 @lru_cache(maxsize=4096)
@@ -243,109 +247,52 @@ def vacation_features(day, hour, holidays):
     )]
 
 
-def schedule_features(windows, categories):
-    hours = [(event, (hi - lo).total_seconds() / 3600) for event, lo, hi, _ in windows]
-    duration = lambda amount: log1p(amount / 24)
-    return [
-        duration(sum(amount for _, amount in hours)),
-        duration(sum(final for _, _, _, final in windows)),
-        simultaneous_hours(windows) / 24,
-        duration(sum(amount for e, amount in hours if e["ranking"] is True)),
-        duration(sum(amount for e, amount in hours if e["ranking"] is False)),
-        *(duration(sum(amount for e, amount in hours if e.get("category") == category))
-          for category in categories),
-    ]
+def month_end_share(day, hour):
+    """Share of the closing window that falls on the last MONTH_END_DAYS days of a month."""
+    start, end = day_window(day, hour)
+    share = 0.
+    for civil_day in dict.fromkeys([start.date(), (end - timedelta(microseconds=1)).date()]):
+        if ((civil_day.replace(day=28) + 4 * DAY).replace(day=1) - civil_day).days <= MONTH_END_DAYS:
+            midnight = datetime.combine(civil_day, time(), JST)
+            share += (min(end, midnight + DAY) - max(start, midnight)).total_seconds() / 86400
+    return share
 
 
-def context_training_rows(rows, rank, features_for, event_months, hour):
-    weeks = {}
-    for day, points in rows:
-        if all(month in event_months for month in window_months(day, hour)):
-            weeks.setdefault(day - day.weekday() * DAY, []).append((day, points))
-    for group in weeks.values():
-        if len(group) < 4:
-            continue
-        columns = [[log(values[i]) for _, values in group if values[i] is not None and values[i] > 0]
-                   for i in range(3)]
-        levels = [median(values) if values else None for values in columns]
-        samples = []
-        for day, points in group:
-            residuals = [log(point) - levels[i] for i, point in enumerate(points)
-                         if point is not None and point > 0 and levels[i] is not None]
-            if residuals:
-                controls = [int(day.weekday() == weekday) for weekday in range(6)]
-                vacation, schedule, _ = features_for(rank, day)
-                samples.append((day, [*controls, *vacation, *schedule], median(residuals)))
-        if len(samples) < 4:
-            continue
-        center = [mean(values) for values in zip(*(features for _, features, _ in samples))]
-        for day, features, residual in samples:
-            yield day, ([1, *(value - typical for value, typical in zip(features, center))], residual)
+def corrections(replays, holidays, dates):
+    """Learn month-end and holiday shifts (log multipliers) from the weekday forecast's replay errors.
 
-
-def provisional_context(records, now, dates, events, event_months, holidays, event_gaps):
-    """Fit pooled corrections to current historical schedules without claiming backtest scores."""
-    categories = sorted({event["category"] for event in events if event.get("category")})
-    adjustments = {}
-    diagnostics = {}
-    for hour in CLOSES:
-        adjustments[hour], diagnostics[hour] = context_for_close(
-            records, now, dates, events, event_months, holidays, event_gaps[str(hour)],
-            hour, categories,
-        )
-    return adjustments, diagnostics
-
-
-def context_for_close(records, now, dates, events, event_months, holidays, gaps, hour, categories):
+    Each closing window's error is averaged over all ranks, so the fit sees market-wide moves only.
+    Event-type shifts are left at zero: fitted on Oct-Nov 2026 they changed sign from week to week
+    and made later weeks worse (MAPE 12.3% -> 13.3-13.6%), so the slot stays for a future model.
+    """
     @lru_cache(maxsize=None)
-    def features_for(rank, day):
-        windows = list(event_windows(events, rank, day, hour))
-        official = [window for window in windows if not window[0].get("reference")]
-        return (vacation_features(day, hour, holidays), schedule_features(windows, categories),
-                schedule_features(official, categories))
+    def calendar_for(day, hour):
+        return [month_end_share(day, hour), *vacation_features(day, hour, holidays)]
 
-    dated_samples = {}
-    for rank in RANKS:
-        rows = known_rows(records.get(f"{rank}/{hour}", {}), now.date(), now)
-        for day, row in context_training_rows(rows, rank, features_for, event_months, hour):
-            dated_samples.setdefault(day, []).append(row)
-    diagnostics = {
-        "days": len(dated_samples),
-        "holidayDays": sum(vacation_features(day, hour, holidays)[0] > 0 for day in dated_samples),
-        "obonDays": sum(vacation_features(day, hour, holidays)[1] > 0 for day in dated_samples),
-        "newYearDays": sum(vacation_features(day, hour, holidays)[2] > 0 for day in dated_samples),
-    }
-    if len(dated_samples) < 7:
-        return {}, diagnostics
-
-    samples, weights = [], []
-    for group in dated_samples.values():
-        samples.extend(group)
-        weights.extend(repeat(1 / len(group), len(group)))
-    coefficients = fit_ridge(samples, weights)
-    # The intercept and six weekday terms control for the baseline's weekday effects.
-    holiday_coefficients, schedule_coefficients = coefficients[7:10], coefficients[10:]
-    results = {}
-    recent = [now.date() - DAY * offset for offset in range(1, BASELINE_DAYS + 1)]
-    recent = [day for day in recent if all(month in event_months for month in window_months(day, hour))]
-    for rank in RANKS:
-        typical = [features_for(rank, day) for day in (recent or dated_samples)]
-        combined = median(sum(a * b for a, b in zip(schedule_coefficients, event)) for _, event, _ in typical)
-        official = median(sum(a * b for a, b in zip(schedule_coefficients, own)) for _, _, own in typical)
-        rank_dates = {}
-        for day in dates:
-            iso = day.isoformat()
-            vacation, schedule, verified = features_for(rank, day)
-            holiday_shift = sum(a * b for a, b in zip(holiday_coefficients, vacation))
-            if iso in gaps:
-                event_shift = reference_shift = 0.
-            else:
-                event_shift = sum(a * b for a, b in zip(schedule_coefficients, schedule)) - combined
-                official_shift = sum(a * b for a, b in zip(schedule_coefficients, verified)) - official
-                reference_shift = event_shift - official_shift
-            rank_dates[iso] = (holiday_shift, event_shift, reference_shift)
-        results[rank] = rank_dates
-    return results, diagnostics
+    windows = {}
+    for key, borders in replays.items():
+        hour = int(key.split("/")[1])
+        for pairs in borders:
+            for day, forecast, actual in pairs:
+                windows.setdefault((day, hour), []).append(log(actual / forecast))
+    calendar = [0.] * 4
+    if len(windows) >= 7:
+        # The intercept takes the overall bias, which past errors did not predict.
+        calendar = fit_ridge([([1, *calendar_for(day, hour)], mean(errors))
+                              for (day, hour), errors in windows.items()])[1:]
+    adjustments, diagnostics = {}, {}
+    for hour in CLOSES:
+        days = {day for day, close in windows if close == hour}
+        diagnostics[hour] = {
+            "days": len(days),
+            "holidayDays": sum(calendar_for(day, hour)[1] > 0 for day in days),
+            "monthEndDays": sum(calendar_for(day, hour)[0] > 0 for day in days),
+            "monthEndPercent": round((exp(calendar[0]) - 1) * 100, 1),
+        }
+        shifts = {day.isoformat(): (sum(a * b for a, b in zip(calendar, calendar_for(day, hour))), 0., 0.)
+                  for day in dates}
+        adjustments[hour] = dict.fromkeys(RANKS, shifts)
+    return adjustments, diagnostics
 
 
 def score(coefficients, features):
@@ -450,6 +397,63 @@ def select_model(simple, eventful):
             if scores[-1] < min(scores[:-1]) and active_scores[-1] < min(active_scores[:-1]):
                 result["method"] = "events"
     return result
+
+
+def accuracy(pairs):
+    """Summarize (forecast, actual) pairs; a positive bias means forecasts ran high."""
+    errors = [(forecast - actual) / actual for forecast, actual in pairs]
+    if not errors:
+        return {"n": 0}
+    misses = [abs(error) for error in errors]
+    share = lambda limit: round(100 * sum(miss <= limit for miss in misses) / len(misses))
+    return {"n": len(errors), "mape": round(100 * mean(misses), 1), "within10": share(.1),
+            "within20": share(.2), "bias": round(100 * mean(errors), 1)}
+
+
+def replay(records, peers, hour, now, history=VALIDATION_HISTORY):
+    """Rerun the weekday forecast for past days, treating each border as public PUBLISH_LAG after its close.
+
+    Returns (day, forecast, actual) triples per border.
+    """
+    def published(series):
+        rows = [(day, versions[-1][1]) for day, versions in sorted(series.items())]
+        return [day for day, _ in rows], rows
+
+    def known(series, first, last):
+        days, rows = series
+        return rows[bisect_left(days, first):bisect_right(days, last)]
+
+    own, others = published(records), [published(peer) for peer in peers]
+    pairs = [[] for _ in range(3)]
+    for day, actual in own[1]:
+        if day < now.date() - history * DAY:
+            continue
+        cutoff, _ = day_window(day, hour)
+        first = day - (WEEKDAY_HISTORY + 1) * DAY  # 13時: the weekday window ends two days back
+        # A border closes `hour` after its own midnight, so with a whole-day lag the newest public
+        # border at this window's start is from PUBLISH_LAG + 1 day earlier.
+        last_public = day - DAY - PUBLISH_LAG
+        rows, peer_rows = known(own, first, last_public), [known(peer, first, last_public) for peer in others]
+        if len(rows) < 7:  # The updater also refuses to publish with fewer recent borders.
+            continue
+        for border, value in enumerate(actual):
+            typical, _, _, last = baseline(rows, day, cutoff, border)
+            if value and typical is not None:
+                factor = weekday_factors(rows, peer_rows, last, border)[day.weekday()][0]
+                pairs[border].append((day, round(typical * factor), value))
+    return pairs
+
+
+def spread(pairs, share=.85):
+    """Multipliers that held the middle `share` of actual/forecast ratios, or None if too few.
+
+    Past errors run narrow on new days: the middle 85% held 80% (RANGE_SHARE) of Oct-Nov 2026 actuals.
+    """
+    ratios = sorted(actual / forecast for _, forecast, actual in pairs)
+    if len(ratios) < 20:
+        return None
+    tail = (1 - share) / 2
+    return [round(ratios[round(q * (len(ratios) - 1))], 3) for q in (tail, 1 - tail)]
 
 
 def series_forecast(records, peers, rank, hour, database, now, dates, event_gaps, aggregate=None, context=None):

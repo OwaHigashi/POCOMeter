@@ -24,8 +24,8 @@ from html.parser import HTMLParser
 import xml.etree.ElementTree as ET
 
 from meter_model import (
-    CLOSES, DAY, JST, MODEL_HISTORY, RANKS, VALIDATION_HISTORY, as_time, calendar_windows,
-    day_window, event_windows, events_at, holidays_at, provisional_context, series_forecast, simultaneous_hours,
+    CLOSES, DAY, JST, MODEL_HISTORY, PUBLISH_LAG, RANGE_SHARE, RANKS, VALIDATION_HISTORY, accuracy, as_time, calendar_windows,
+    corrections, day_window, event_windows, events_at, holidays_at, replay, series_forecast, simultaneous_hours, spread,
     window_months,
 )
 
@@ -614,10 +614,6 @@ def official_events(reviewed, now, previous_calendars):
     return notices, sorted(calendars), images
 
 
-class StaleSource(ValueError):
-    """The source has not published recent borders yet."""
-
-
 def read_json(path, default=None):
     if path.exists():
         return json.loads(path.read_text())
@@ -695,15 +691,24 @@ def build_report(database, summaries, now, prior, bootstrap, calendars):
         key: {date.fromisoformat(day): values for day, values in rows.items()}
         for key, rows in database["records"].items()
     }
-    context, context_training = provisional_context(
-        records_by_series, now, dates, all_events, set(reference), holidays, event_gaps
-    )
+    peers_of = {key: [records_by_series[peer] for peer, (other, close) in SERIES.items()
+                      if peer != key and close == hour and other[0] == rank[0] and peer in records_by_series]
+                for key, (rank, hour) in SERIES.items()}
+    replays = {key: replay(records_by_series.get(key, {}), peers_of[key], hour, now, MODEL_HISTORY)
+               for key, (_, hour) in SERIES.items()}
+    context, context_training = corrections(replays, holidays, dates)
+    recent = today - VALIDATION_HISTORY * DAY
+    recent_replays = {key: [[row for row in rows if row[0] >= recent] for rows in borders]
+                      for key, borders in replays.items()}
+    pooled = {(hour, border): [row for key, (_, close) in SERIES.items() if close == hour
+                               for row in recent_replays[key][border]]
+              for hour in CLOSES for border in range(3)}
     result = {}
+    all_replayed, all_published = [], []
     for key, (rank, hour) in SERIES.items():
         raw_records = database["records"].get(key, {})
         records = records_by_series.get(key, {})
-        peers = [records_by_series[peer] for peer, (other, close) in SERIES.items()
-                 if peer != key and close == hour and other[0] == rank[0] and peer in records_by_series]
+        peers = peers_of[key]
         forecasts, validation = series_forecast(
             records, peers, rank, hour, database, now, dates, event_gaps[str(hour)], summaries.get(key),
             context[hour].get(rank),
@@ -734,12 +739,25 @@ def build_report(database, summaries, now, prior, bootstrap, calendars):
                 overlaps[day.isoformat()] = hours
         actuals = {day: [versions[-1][1], versions[-1][2]]
                    for day, versions in raw_records.items() if date.fromisoformat(day) >= today - 30 * DAY}
+        replayed = [[(forecast, actual) for _, forecast, actual in rows] for rows in recent_replays[key]]
+        published = [[] for _ in range(3)]
+        for iso, (values, _) in actuals.items():
+            for i, (forecast, value) in enumerate(zip(forecasts.get(iso, {}).get("points", []), values)):
+                if forecast and value:
+                    published[i].append((forecast, value))
+        for pairs in replayed:
+            all_replayed.extend(pairs)
+        for pairs in published:
+            all_published.extend(pairs)
         latest = max(raw_records, default=None)
         result[key] = {
             "latest": latest, "latestSource": raw_records[latest][-1][2] if latest else None,
             "actuals": actuals, "forecastDefault": default, "forecastByWeekday": weekday_defaults,
             "forecasts": forecasts,
             "validation": validation,
+            "accuracy": {"replay": [accuracy(p) for p in replayed], "published": [accuracy(p) for p in published]},
+            # Short series borrow the spread of all ranks at the same close.
+            "range": [spread(rows) or spread(pooled[hour, border]) for border, rows in enumerate(recent_replays[key])],
             "overlaps": overlaps,
         }
     newest = max((series["latest"] for series in result.values() if series["latest"]), default=None)
@@ -751,6 +769,8 @@ def build_report(database, summaries, now, prior, bootstrap, calendars):
         "bootstrap": bootstrap, "latest": newest,
         "first": (today - 30 * DAY).isoformat(), "last": dates[-1].isoformat(),
         "today": today.isoformat(), "series": result, "events": metadata,
+        "accuracy": {"replay": accuracy(all_replayed), "published": accuracy(all_published),
+                     "publishLagDays": PUBLISH_LAG.days, "rangeShare": RANGE_SHARE},
         "hourlyEvents": hourly_events, "calendars": calendars, "eventGaps": event_gaps,
         "holidayWindows": holiday_windows, "holidaySource": HOLIDAY_PAGE,
         "contextTraining": context_training,
@@ -805,10 +825,7 @@ def run(now, seed_path):
             check_values(values)
             if day_window(date.fromisoformat(day), SERIES[key][1])[1] <= now:
                 put_version(series.setdefault(day, []), stamp, values, source)
-        database["records"][key] = {
-            day: versions for day, versions in series.items()
-            if date.fromisoformat(day) >= now.date() - HISTORY * DAY
-        }
+    stale = []
     if not seed_path:
         for key, (rank, hour) in SERIES.items():
             series = database["records"][key]
@@ -819,7 +836,10 @@ def run(now, seed_path):
                     or (old_latest and newest < old_latest)):
                 raise ValueError(f"{rank} {hour}: recent source coverage failed validation")
             if (now.date() - date.fromisoformat(newest)).days > 4:
-                raise StaleSource(f"{rank} {hour}: source has no record after {newest}")
+                # Republish from the newest borders anyway; the page tells readers the source is behind.
+                stale.append(f"{rank} {hour} ({newest})")
+    if stale:
+        print(f"Source has no recent borders for {len(stale)} series: {', '.join(stale[:3])}")
     put_version(database["events"].setdefault("reviewed", []), stamp, reviewed)
     for source, events in notice_batches.items():
         versions = database["events"].get(source, [])
@@ -835,7 +855,7 @@ def run(now, seed_path):
     atomic_json(state_file, database, 0o600)
     atomic_json(report_file, report)
     print(f"Published {len(SERIES)} series, latest border {report['latest']}, generated {stamp}")
-    return {"referenceDelayed": reference_failed, "holidayDelayed": holiday_failed}
+    return {"stale": bool(stale), "referenceDelayed": reference_failed, "holidayDelayed": holiday_failed}
 
 
 def main():
@@ -852,14 +872,13 @@ def main():
             source_status = run(now, options.seed)
         except Exception as error:
             atomic_json(ROOT / "status.json", {
-                "checked": datetime.now(JST).isoformat(),
-                "state": "stale" if isinstance(error, StaleSource) else "delayed",
+                "checked": datetime.now(JST).isoformat(), "state": "delayed",
             })
             print(f"Rank meter update failed: {error}", file=sys.stderr)
             return 1
         atomic_json(ROOT / "status.json", {
             "checked": datetime.now(JST).isoformat(),
-            "state": "bootstrap" if options.seed else "ok",
+            "state": "bootstrap" if options.seed else "stale" if source_status.pop("stale") else "ok",
             **source_status,
         })
         return 0
